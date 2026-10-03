@@ -111,16 +111,24 @@ function isTenDigitPhone(value) {
 }
 
 function lineIcon(name, className = '') {
-  const paths = {
-    notice: '<path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M8 7h8M8 11h7"/>',
-    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/>',
-    opportunity: '<path d="M20 7h-9M14 17H5M20 17h-2M8 7H4"/><circle cx="17" cy="17" r="3"/><circle cx="7" cy="7" r="3"/>',
-    support: '<path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8A8.5 8.5 0 0 1 8.7 3.9a8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/><path d="M8.5 12h7"/>',
-    arrow: '<path d="M5 12h14M13 6l6 6-6 6"/>',
+  const icons = {
+    notice: ['book-open-text', '<path d="M12 5v16"/><path d="M16 13h2"/><path d="M16 9h2"/><path d="M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/><path d="M6 13h2"/><path d="M6 9h2"/>'],
+    calendar: ['calendar-days', '<path d="M8 2v3"/><path d="M16 2v3"/><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M8 13h.01"/><path d="M12 13h.01"/><path d="M16 13h.01"/><path d="M8 17h.01"/><path d="M12 17h.01"/><path d="M16 17h.01"/>'],
+    opportunity: ['sliders-horizontal', '<path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/>'],
+    support: ['message-circle', '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/>'],
+    arrow: ['arrow-right', '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>'],
+    building: ['building-complex', '<path d="M10 12h4"/><path d="M10 8h4"/><path d="M14 21v-3a2 2 0 0 0-4 0v3"/><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"/><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/>'],
+    clock: ['clock-3', '<circle cx="12" cy="12" r="10"/><path d="M12 6v6h4"/>'],
+    location: ['map-pin', '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>'],
+    users: ['users-round', '<path d="M18 21a8 8 0 0 0-16 0"/><circle cx="10" cy="8" r="5"/><path d="M22 20c0-3.37-2-6.5-4-8a5 5 0 0 0-.45-8.3"/>'],
+    phone: ['phone', '<path d="M13.832 16.568a1 1 0 0 0 1.213-.303l.355-.465A2 2 0 0 1 17 15h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2A18 18 0 0 1 2 4a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-.8 1.6l-.468.351a1 1 0 0 0-.292 1.233 14 14 0 0 0 6.392 6.384"/>'],
+    calendarPlus: ['calendar-plus', '<path d="M16 18h6"/><path d="M16 2v3"/><path d="M19 15v6"/><path d="M21 11.5V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h8.3"/><path d="M3 9h18"/><path d="M8 2v3"/>'],
+    check: ['check', '<path d="M20 6 9 17l-5-5"/>'],
   };
-  const pathsForIcon = paths[name];
-  if (!pathsForIcon) throw new Error(`Unknown line icon: ${name}`);
-  return `<svg class="line-icon ${escapeAttr(className)}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${pathsForIcon}</svg>`;
+  const icon = icons[name];
+  if (!icon) throw new Error(`Unknown Lucide icon: ${name}`);
+  const [iconName, nodes] = icon;
+  return `<svg class="lucide lucide-${iconName} line-icon ${escapeAttr(className)}" data-lucide="${iconName}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${nodes}</svg>`;
 }
 
 /* ---------- Placeholder image (SVG data URI) ---------- */
@@ -387,7 +395,7 @@ function renderNotices() {
         <span class="badge badge-${n.category}">${n.category}</span>
       </div>
       <div class="card-meta">
-        <span>📅 ${fmtDate(n.date)}</span>
+        <span>${lineIcon('calendar')} ${fmtDate(n.date)}</span>
       </div>
       <p class="card-body">${escapeHtml(n.body)}</p>
     </article>
@@ -897,15 +905,15 @@ function renderEvents() {
           <span class="badge badge-event">Event</span>
         </div>
         <div class="card-meta">
-          <span>📅 ${escapeHtml(ev.date)} ${ev.time ? '· ' + escapeHtml(ev.time) : ''}</span>
-          <span>📍 ${escapeHtml(ev.location || '—')}</span>
-          <span>👥 ${count} registered</span>
+          <span>${lineIcon('calendar')} ${escapeHtml(ev.date)} ${ev.time ? '· ' + escapeHtml(ev.time) : ''}</span>
+          <span>${lineIcon('location')} ${escapeHtml(ev.location || '—')}</span>
+          <span>${lineIcon('users')} ${count} registered</span>
         </div>
         <p class="card-body">${escapeHtml(ev.description || '')}</p>
         <div class="card-actions">
-        <button class="btn btn-outline" data-calendar="${ev.id}">Add calendar reminder</button>
+        <button class="btn btn-outline" data-calendar="${ev.id}">${lineIcon('calendarPlus')} Add calendar reminder</button>
         ${hasCampusAccess()
-          ? `<button class="btn ${registered ? 'btn-outline' : 'btn-primary'}" data-register="${escapeAttr(ev.id)}" ${registered ? 'disabled' : ''}>${registered ? '✓ Registered' : 'Register'}</button>`
+          ? `<button class="btn ${registered ? 'btn-outline' : 'btn-primary'}" data-register="${escapeAttr(ev.id)}" ${registered ? 'disabled' : ''}>${registered ? `${lineIcon('check')} Registered` : 'Register'}</button>`
           : '<button class="btn btn-primary" data-page="login">Sign in to register</button>'}
         </div>
         ${ev.feedbackPoll?.enabled ? renderEventFeedback(ev) : ''}
@@ -979,8 +987,8 @@ function renderOpportunities() {
         <span class="tag">${escapeHtml(o.type)}</span>
       </div>
       <div class="card-meta">
-        <span>🏢 ${escapeHtml(o.org || '—')}</span>
-        <span>⏳ Deadline: ${escapeHtml(o.deadline || '—')}</span>
+        <span>${lineIcon('building')} ${escapeHtml(o.org || '—')}</span>
+        <span>${lineIcon('clock')} Deadline: ${escapeHtml(o.deadline || '—')}</span>
       </div>
       <p class="card-body">${escapeHtml(o.description || '')}</p>
       <div class="card-actions">
@@ -1014,12 +1022,12 @@ function renderLostFound() {
         </span>
       </div>
       <div class="card-meta">
-        <span>📍 ${escapeHtml(i.location || '—')}</span>
-        <span>📅 ${fmtDate(i.date)}</span>
+        <span>${lineIcon('location')} ${escapeHtml(i.location || '—')}</span>
+        <span>${lineIcon('calendar')} ${fmtDate(i.date)}</span>
       </div>
       ${i.description ? `<p class="card-body">${escapeHtml(i.description)}</p>` : ''}
       <div class="card-meta mt-1">
-        <span>📞 Contact: ${escapeHtml(i.contact || '—')}</span>
+        <span>${lineIcon('phone')} Contact: ${escapeHtml(i.contact || '—')}</span>
       </div>
     </article>
   `).join('');
@@ -1928,8 +1936,8 @@ function openEventRegisterModal(eventId) {
   openModal(`
     <h3>Register for ${escapeHtml(ev.title)}</h3>
     <p class="muted small mb-1">
-      📅 ${escapeHtml(ev.date)}${ev.time ? ' · ' + escapeHtml(ev.time) : ''}
-      ${ev.location ? ' · 📍 ' + escapeHtml(ev.location) : ''}
+      ${lineIcon('calendar')} ${escapeHtml(ev.date)}${ev.time ? ' · ' + escapeHtml(ev.time) : ''}
+      ${ev.location ? ` · ${lineIcon('location')} ${escapeHtml(ev.location)}` : ''}
     </p>
     <p class="muted small mb-1">
       Please fill in your details to confirm your spot.
@@ -2023,7 +2031,7 @@ function handleEventRegisterSubmit(e, eventId) {
 
   result.innerHTML = `
     <div class="alert alert-success">
-      ✅ You're registered, <strong>${escapeHtml(name)}</strong>!
+      ${lineIcon('check')} You're registered, <strong>${escapeHtml(name)}</strong>!
       Your event registration is saved for ${escapeHtml(email)}.
     </div>
   `;

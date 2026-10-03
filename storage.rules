@@ -1,0 +1,44 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function verified() {
+      return request.auth != null && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return verified()
+        && firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/admins/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function validImageUpload(maxBytes) {
+      return request.resource != null
+        && request.resource.size > 0
+        && request.resource.size <= maxBytes
+        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+    }
+
+    match /gallery/{fileName} {
+      allow read: if true;
+      allow create, update: if isAdmin()
+        && fileName.matches('^[A-Za-z0-9_-]{1,128}\\.(jpg|jpeg|png|webp)$')
+        && validImageUpload(10485760);
+      allow delete: if isAdmin();
+    }
+
+    match /lostFound/{ownerUid}/{postId}/{fileName} {
+      allow read: if isAdmin()
+        || (verified() && request.auth.uid == ownerUid)
+        || (firestore.exists(/databases/(default)/documents/lostFound/$(postId))
+          && firestore.get(/databases/(default)/documents/lostFound/$(postId)).data.ownerUid == ownerUid
+          && firestore.get(/databases/(default)/documents/lostFound/$(postId)).data.approved == true);
+      allow create, update: if verified()
+        && request.auth.uid == ownerUid
+        && postId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && fileName.matches('^[A-Za-z0-9_-]{1,80}\\.(jpg|jpeg|png|webp)$')
+        && validImageUpload(5242880);
+      allow delete: if (verified() && request.auth.uid == ownerUid) || isAdmin();
+    }
+  }
+}

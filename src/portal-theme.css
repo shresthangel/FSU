@@ -181,6 +181,13 @@ body .more-toggle:hover {
   color: var(--text);
 }
 body .more-toggle { background: transparent; font-family: inherit; cursor: pointer; }
+body .more-toggle .more-chevron {
+  width: 13px;
+  height: 13px;
+  margin-left: -.15rem;
+  transition: transform .18s ease;
+}
+body .more-toggle[aria-expanded="true"] .more-chevron { transform: rotate(180deg); }
 body .more-menu {
   min-width: 220px;
   padding: .35rem;

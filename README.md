@@ -80,6 +80,12 @@ We kept it simple and popular so any student developer can understand and contin
 | Hosting | Vercel, Render, CloudFare |
 | Version control | Git + GitHub |
 
+## Current frontend implementation
+
+The current Vite app includes the responsive public navigation, mobile bottom tabs and menu, theme toggle, landing page sections, and an admin dashboard preview. Navigation is client-side; sign-in and admin preview actions are UI demonstrations only and are not connected to an authentication service or backend yet.
+
+Run the frontend locally with `npm install` followed by `npm run dev`. Use `npm run build` to run the TypeScript checks and create a production build.
+
 ---
 
 ## Who benefits

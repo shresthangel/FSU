@@ -8,9 +8,9 @@ A one-stop website for the **Free Student Union (FSU)**, built so every student 
 
 ## About the project
 
-The FSU works for students, but right now most of its work happens on paper, in random chat groups, and by word of mouth. Students miss events, complaints get lost, and nobody knows what the union is actually doing.
+The FSU works for students, but right now most of its work happens on paper and social media(Facebook), in random chat groups, and by word of mouth. Students miss events, complaints get lost, and nobody knows what the union is actually doing.
 
-This project is a single website where students and the FSU can meet. It is simple to use, works on a phone, and keeps everything in one place.
+This project is a single website where students and the FSU can meet. Public notices and published events are available to everyone; private student support and account features require sign-in.
 
 ---
 
@@ -31,15 +31,15 @@ In short, students want to be heard and informed, and the union wants to help, b
 
 ## Our solution
 
-We are building **one multipurpose FSU website** that does the following:
+The **FSU website** brings these workflows together:
 
 - Gives students one place for all notices and events
-- Lets them submit complaints and suggestions (even anonymously) and track the progress
+- Lets students submit private complaints and suggestions and follow replies and status updates
 - Shows what the FSU is doing, openly
 - Collects event interest and suggestions from verified campus students
 - Keeps study material and opportunities in one shelf
 
-The FSU team gets an **admin dashboard** to post updates, handle complaints, and manage events without needing any technical skill.
+Verified administrators get an **admin dashboard** to publish updates, handle support requests, and manage events and other student resources.
 
 ---
 
@@ -47,13 +47,14 @@ The FSU team gets an **admin dashboard** to post updates, handle complaints, and
 
 ### For students
 - **Notice board:** latest notices, with categories (exam, event, scholarship, general) and search
-- **Complaint and suggestion box:** submit a problem with a photo if needed. Choose to stay anonymous. Get a tracking ID and see the status (Received, In progress, Solved)
+- **Private support:** submit a complaint or suggestion, follow its status (Received, In progress, Solved), and exchange replies with the FSU team
 - **Events and registration:** see upcoming programs, register in one click, get reminders
 - **Event feedback:** verified students can vote on whether an event should be organized and leave a suggestion
 - **Opportunities page:** scholarships, internships, trainings, competitions
 - **Lost and found:** post or find lost items on campus
 - **Gallery:** photos from past programs
 - **Meet the team:** FSU members, their roles, and how to contact them
+<<<<<<< HEAD
 
 ### For FSU team (admin)
 - Post and edit notices and events
@@ -62,6 +63,15 @@ The FSU team gets an **admin dashboard** to post updates, handle complaints, and
 - Add events, choose whether to collect student feedback, and review responses
 - Add and remove gallery photos
 - Moderate lost and found posts
+=======
+- **Account profile:** manage the signed-in student account
+
+### For FSU team (admin)
+- Post and edit notices, events, polls, and opportunities
+- See all complaints in one list, assign them, change status, and reply
+- Review event registrations and export attendee lists
+- Approve lost and found posts and manage gallery content
+>>>>>>> 49dbf8b23be29a23e4d0514e7487164ee484838e
 - Simple numbers on the dashboard: total complaints, solved ones, event sign-ups
 
 ---
@@ -70,6 +80,7 @@ The FSU team gets an **admin dashboard** to post updates, handle complaints, and
 
 The portal uses React 19, Vite, Tailwind CSS 4, shadcn/ui primitives, and an Express server, with Firebase Authentication/Cloud Firestore. Students can sign up with any valid email address, verify that they own it, and submit their campus-issued student ID. An FSU admin must check the ID against official campus records and approve the request before student portal features are unlocked.
 
+<<<<<<< HEAD
 The React entry point in `src/` mounts the existing portal shell and initializes its feature controller in `app.js`. This compatibility layer intentionally keeps the current authentication, inbox, events, feedback, and admin behavior unchanged while the UI is migrated to reusable React/shadcn components.
 
 1. Create a Firebase project and register a **Web app**.
@@ -107,6 +118,31 @@ If sign-in succeeds but shows a Firestore permissions warning, the student accou
 | Server | Node.js and Express |
 | Hosting | Node.js host (or Vercel, Render, or Cloudflare) |
 | Version control | Git and GitHub |
+=======
+| Part | What we use |
+|---|---|
+| Frontend | React, TypeScript, and Vite |
+| Styling | CSS and Tailwind CSS |
+| Backend services | Firebase Authentication, Cloud Firestore, and Cloud Storage |
+| Hosting | Deploy to a host that supports Vite static builds |
+| Version control | Git + GitHub |
+>>>>>>> 49dbf8b23be29a23e4d0514e7487164ee484838e
+
+## Portal implementation
+
+The Vite app includes responsive navigation, a searchable notice board with Exam, Event, Scholarship, and General categories, and real-time Firestore updates. Visitors can read notices without signing in. Signed-in students can register for events, vote in polls, manage their profile, and access private support; email verification is required for support conversations. Administrators manage notices, events, support requests, polls, opportunities, Lost and Found, and gallery content.
+
+### Firebase setup
+
+1. Create a Firebase project, register a Web app, enable **Email/Password** under Authentication → Sign-in method, and create Firestore and Storage.
+2. Copy `.env.example` to `.env.local`, then set the Web app's API key, Auth domain, Project ID, Storage bucket, and App ID. Restart Vite after changing environment variables.
+3. Deploy the included Firestore and Storage rules. The rules—not the client UI—enforce public reads, verified-user restrictions, ownership, and administrator access.
+4. Create an account through the app and verify its email. To grant administrator access, find its UID in Firebase Authentication → Users, then create `admins/{uid}` in Firestore with `role: "admin"`. Provision admin records only through the Firebase Console or a trusted administrative environment; client writes to this collection are denied.
+5. Run `npm test` for unit tests. Set `VITE_USE_FIREBASE_EMULATORS=true` in `.env.local` and run `npm run test:emulators` to exercise the Firestore, Storage, and Auth rules against the local emulators.
+
+Firebase configuration is required; the app does not fall back to browser-local storage. Keep the included security rules deployed and grant admin records only through the Firebase console or another trusted administrative environment.
+
+Run the frontend locally with `npm install` followed by `npm run dev`. Use `npm run build` to run the TypeScript checks and create a production build.
 
 ---
 

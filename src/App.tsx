@@ -22,8 +22,10 @@ import {
   MoreHorizontal,
   Phone,
   PlusCircle,
+  Pencil,
   Search,
   Sun,
+  Trash2,
   Users,
   UserPlus,
   Vote,
@@ -72,11 +74,83 @@ const adminLinks: NavItem[] = [
   { label: 'Decisions', path: '/admin/decisions', icon: FileText },
 ]
 
-const notices = [
-  { category: 'STUDENT LIFE', title: 'Your Union, your say: the semester starts here', date: 'OCT 02, 2026', tone: 'mint' },
-  { category: 'CAMPUS UPDATE', title: 'Study spaces open later during midterms', date: 'SEP 28, 2026', tone: 'peach' },
-  { category: 'OPPORTUNITY', title: 'Applications are open for student representatives', date: 'SEP 24, 2026', tone: 'lavender' },
+type NoticeCategory = 'exam' | 'event' | 'scholarship' | 'general'
+
+type Notice = {
+  id: string
+  title: string
+  body: string
+  category: NoticeCategory
+  createdAt: string
+}
+
+type NoticeForm = Pick<Notice, 'title' | 'body' | 'category'>
+
+const noticeStorageKey = 'fsu-notices'
+const noticeCategories: NoticeCategory[] = ['exam', 'event', 'scholarship', 'general']
+const noticeCategoryLabels: Record<NoticeCategory, string> = {
+  exam: 'Exam',
+  event: 'Event',
+  scholarship: 'Scholarship',
+  general: 'General',
+}
+
+const defaultNotices: Notice[] = [
+  {
+    id: 'welcome-semester',
+    category: 'general',
+    title: 'Your Union, your say: the semester starts here',
+    body: 'Welcome back! Share your ideas and help shape what the Union works on this semester.',
+    createdAt: '2026-10-02T09:00:00.000Z',
+  },
+  {
+    id: 'midterm-hours',
+    category: 'exam',
+    title: 'Study spaces open later during midterms',
+    body: 'The library study spaces will stay open later during the midterm period. Check campus opening notices for daily hours.',
+    createdAt: '2026-09-28T09:00:00.000Z',
+  },
+  {
+    id: 'student-representatives',
+    category: 'scholarship',
+    title: 'Applications are open for student representatives',
+    body: 'Applications are now open for students interested in representing their peers. Contact the Union for application details.',
+    createdAt: '2026-09-24T09:00:00.000Z',
+  },
 ]
+
+const isNoticeCategory = (value: unknown): value is NoticeCategory =>
+  typeof value === 'string' && noticeCategories.includes(value as NoticeCategory)
+
+const isNotice = (value: unknown): value is Notice => {
+  if (typeof value !== 'object' || value === null) return false
+  const notice = value as Record<string, unknown>
+  return typeof notice.id === 'string'
+    && typeof notice.title === 'string'
+    && typeof notice.body === 'string'
+    && isNoticeCategory(notice.category)
+    && typeof notice.createdAt === 'string'
+    && !Number.isNaN(Date.parse(notice.createdAt))
+}
+
+const loadNotices = (): { notices: Notice[]; error: string | null } => {
+  try {
+    const storedNotices = window.localStorage.getItem(noticeStorageKey)
+    if (storedNotices === null) return { notices: defaultNotices, error: null }
+    const parsed: unknown = JSON.parse(storedNotices)
+    if (!Array.isArray(parsed) || !parsed.every(isNotice)) {
+      return { notices: defaultNotices, error: 'Saved notices could not be read. The sample notice board is shown instead.' }
+    }
+    return { notices: parsed, error: null }
+  } catch {
+    return { notices: defaultNotices, error: 'Saved notices could not be loaded from this browser.' }
+  }
+}
+
+const formatNoticeDate = (date: string) =>
+  new Date(date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).toUpperCase()
+
+const emptyNoticeForm: NoticeForm = { title: '', body: '', category: 'general' }
 
 const events = [
   {
@@ -115,10 +189,34 @@ function App() {
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
   const [user, setUser] = useState<'guest' | 'student' | 'admin'>('guest')
+  const [noticeData, setNoticeData] = useState(loadNotices)
+  const [noticeSearch, setNoticeSearch] = useState('')
+  const [noticeCategoryFilter, setNoticeCategoryFilter] = useState<NoticeCategory | 'all'>('all')
+  const [noticeForm, setNoticeForm] = useState<NoticeForm>(emptyNoticeForm)
+  const [noticeFormError, setNoticeFormError] = useState<string | null>(null)
+  const [editingNoticeId, setEditingNoticeId] = useState<string | null>(null)
+  const notices = noticeData.notices
+
+  const updateNotices = (nextNotices: Notice[]) => {
+    try {
+      window.localStorage.setItem(noticeStorageKey, JSON.stringify(nextNotices))
+      setNoticeData({ notices: nextNotices, error: null })
+    } catch {
+      setNoticeData({ notices: nextNotices, error: 'Notice changes could not be saved in this browser.' })
+    }
+  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light'
   }, [darkMode])
+
+  useEffect(() => {
+    const syncNotices = (event: StorageEvent) => {
+      if (event.key === noticeStorageKey || event.key === null) setNoticeData(loadNotices())
+    }
+    window.addEventListener('storage', syncNotices)
+    return () => window.removeEventListener('storage', syncNotices)
+  }, [])
 
   useEffect(() => {
     const onPopState = () => setCurrentPath(window.location.pathname)
@@ -168,6 +266,50 @@ function App() {
     setCurrentPath('/')
   }
 
+  const saveNotice = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    const title = noticeForm.title.trim()
+    const body = noticeForm.body.trim()
+    if (!title || !body) {
+      setNoticeFormError('Add a title and details before publishing.')
+      return
+    }
+
+    const nextNotices = editingNoticeId
+      ? notices.map((notice) => notice.id === editingNoticeId
+        ? { ...notice, title, body, category: noticeForm.category }
+        : notice)
+      : [{ id: crypto.randomUUID(), title, body, category: noticeForm.category, createdAt: new Date().toISOString() }, ...notices]
+
+    updateNotices(nextNotices)
+    setNoticeFormError(null)
+    setNoticeForm(emptyNoticeForm)
+    setEditingNoticeId(null)
+  }
+
+  const startEditingNotice = (notice: Notice) => {
+    setEditingNoticeId(notice.id)
+    setNoticeForm({ title: notice.title, body: notice.body, category: notice.category })
+    setNoticeFormError(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const deleteNotice = (noticeId: string) => {
+    updateNotices(notices.filter((notice) => notice.id !== noticeId))
+    if (editingNoticeId === noticeId) {
+      setEditingNoticeId(null)
+      setNoticeForm(emptyNoticeForm)
+      setNoticeFormError(null)
+    }
+  }
+
+  const orderedNotices = [...notices]
+    .sort((first, second) => Date.parse(second.createdAt) - Date.parse(first.createdAt))
+  const visibleNotices = orderedNotices
+    .filter((notice) => noticeCategoryFilter === 'all' || notice.category === noticeCategoryFilter)
+    .filter((notice) => `${notice.title} ${notice.body} ${noticeCategoryLabels[notice.category]}`.toLocaleLowerCase().includes(noticeSearch.trim().toLocaleLowerCase()))
+  const latestNotices = orderedNotices.slice(0, 3)
+
   const link = (item: NavItem, className = '') => {
     const Icon = item.icon
     return (
@@ -212,6 +354,16 @@ function App() {
     }
 
     if (currentPath.startsWith('/admin')) {
+      if (user !== 'admin') {
+        return (
+          <main className="interior-page notice-access">
+            <span className="eyebrow">FSU ADMINISTRATION</span>
+            <h1>Admin access required.</h1>
+            <p>Sign in with an administrator account to manage notices. The public notice board is available to everyone.</p>
+            <a className="button button-primary" href="/login" onClick={(event) => navigate(event, '/login')}>Go to admin sign in <ArrowRight size={16} /></a>
+          </main>
+        )
+      }
       const activeAdmin = adminLinks.find((item) => item.path === currentPath)
       return (
         <main className="admin-layout">
@@ -234,18 +386,110 @@ function App() {
             <span className="eyebrow">FSU ADMINISTRATION</span>
             <h1>{activeAdmin?.label ?? 'Dashboard'}</h1>
             <p className="section-intro">A little more visibility, a lot more student voice.</p>
-            <div className="admin-stats">
-              <article className="admin-stat"><span>New complaints</span><strong>04</strong><small>2 need a response today</small></article>
-              <article className="admin-stat"><span>Pending approvals</span><strong>02</strong><small>Events waiting for review</small></article>
-              <article className="admin-stat"><span>Students reached</span><strong>1,284</strong><small>+12% this month</small></article>
-            </div>
-            <div className="admin-panel">
-              <div><h2>Recently received</h2><p>New messages from your student community.</p></div>
-              {['Library hours during finals', 'Accessible seating in the main hall', 'More water refill stations'].map((title, index) => (
-                <div className="admin-row" key={title}><span className="admin-row-dot" /><strong>{title}</strong><span>{index === 0 ? '12 min ago' : `${index + 1} hr ago`}</span><ArrowRight size={16} /></div>
+            {currentPath === '/admin/notices' ? (
+              <div className="notice-admin">
+                <section className="admin-panel notice-editor">
+                  <div>
+                    <h2>{editingNoticeId ? 'Edit notice' : 'Publish a notice'}</h2>
+                    <p>Published notices are immediately visible on the public notice board.</p>
+                  </div>
+                  <form onSubmit={saveNotice}>
+                    <label htmlFor="notice-title">Title</label>
+                    <input id="notice-title" value={noticeForm.title} onChange={(event) => { setNoticeForm({ ...noticeForm, title: event.target.value }); setNoticeFormError(null) }} maxLength={120} required />
+                    <label htmlFor="notice-category">Category</label>
+                    <select id="notice-category" value={noticeForm.category} onChange={(event) => { if (isNoticeCategory(event.target.value)) setNoticeForm({ ...noticeForm, category: event.target.value }) }}>
+                      {noticeCategories.map((category) => <option key={category} value={category}>{noticeCategoryLabels[category]}</option>)}
+                    </select>
+                    <label htmlFor="notice-body">Details</label>
+                    <textarea id="notice-body" value={noticeForm.body} onChange={(event) => { setNoticeForm({ ...noticeForm, body: event.target.value }); setNoticeFormError(null) }} rows={4} maxLength={1000} required />
+                    {noticeFormError && <p className="notice-form-error" role="alert">{noticeFormError}</p>}
+                    <div className="notice-form-actions">
+                      <button className="button button-primary" type="submit">{editingNoticeId ? 'Save changes' : 'Publish notice'} <ArrowRight size={15} /></button>
+                      {editingNoticeId && <button className="button button-outline" onClick={() => { setEditingNoticeId(null); setNoticeForm(emptyNoticeForm); setNoticeFormError(null) }} type="button">Cancel</button>}
+                    </div>
+                  </form>
+                </section>
+                {noticeData.error && <p className="notice-storage-error" role="alert">{noticeData.error}</p>}
+                <section className="admin-panel notice-admin-list">
+                  <div>
+                    <h2>All notices <span className="notice-count">{notices.length}</span></h2>
+                    <p>Manage notices currently shown to students.</p>
+                  </div>
+                  {orderedNotices.length ? orderedNotices.map((notice) => (
+                    <article className="notice-admin-row" key={notice.id}>
+                      <div className="notice-admin-copy">
+                        <span className={`notice-category-tag category-${notice.category}`}>{noticeCategoryLabels[notice.category]}</span>
+                        <strong>{notice.title}</strong>
+                        <p>{notice.body}</p>
+                        <small>{formatNoticeDate(notice.createdAt)}</small>
+                      </div>
+                      <div className="notice-admin-actions">
+                        <button className="notice-icon-button" aria-label={`Edit ${notice.title}`} onClick={() => startEditingNotice(notice)} type="button"><Pencil size={16} /></button>
+                        <button className="notice-icon-button danger" aria-label={`Delete ${notice.title}`} onClick={() => deleteNotice(notice.id)} type="button"><Trash2 size={16} /></button>
+                      </div>
+                    </article>
+                  )) : <p className="notice-empty">No notices yet. Publish one to share it with students.</p>}
+                </section>
+              </div>
+            ) : (
+              <>
+                <div className="admin-stats">
+                  <article className="admin-stat"><span>New complaints</span><strong>04</strong><small>2 need a response today</small></article>
+                  <article className="admin-stat"><span>Pending approvals</span><strong>02</strong><small>Events waiting for review</small></article>
+                  <article className="admin-stat"><span>Students reached</span><strong>1,284</strong><small>+12% this month</small></article>
+                </div>
+                <div className="admin-panel">
+                  <div><h2>Recently received</h2><p>New messages from your student community.</p></div>
+                  {['Library hours during finals', 'Accessible seating in the main hall', 'More water refill stations'].map((title, index) => (
+                    <div className="admin-row" key={title}><span className="admin-row-dot" /><strong>{title}</strong><span>{index === 0 ? '12 min ago' : `${index + 1} hr ago`}</span><ArrowRight size={16} /></div>
+                  ))}
+                </div>
+              </>
+            )}
+          </section>
+        </main>
+      )
+    }
+
+    if (currentPath === '/notices') {
+      return (
+        <main className="notice-board-page">
+          <div className="notice-board-heading">
+            <span className="eyebrow"><span className="tiny-spark">✳</span> THE NOTICE BOARD</span>
+            <h1>Good to know.</h1>
+            <p>Updates, opportunities, and important dates from your Union.</p>
+          </div>
+          <div className="notice-board-controls">
+            <label className="notice-search">
+              <Search size={18} aria-hidden="true" />
+              <span className="sr-only">Search notices</span>
+              <input type="search" value={noticeSearch} onChange={(event) => setNoticeSearch(event.target.value)} placeholder="Search notices..." />
+            </label>
+            <div className="notice-filter-list" aria-label="Filter notices by category">
+              <button className={noticeCategoryFilter === 'all' ? 'is-selected' : ''} onClick={() => setNoticeCategoryFilter('all')} type="button">All notices</button>
+              {noticeCategories.map((category) => (
+                <button className={noticeCategoryFilter === category ? 'is-selected' : ''} key={category} onClick={() => setNoticeCategoryFilter(category)} type="button">
+                  {noticeCategoryLabels[category]}
+                </button>
               ))}
             </div>
-          </section>
+          </div>
+          {noticeData.error && <p className="notice-storage-error" role="alert">{noticeData.error}</p>}
+          {visibleNotices.length ? (
+            <div className="notice-board-list">
+              {visibleNotices.map((notice, index) => (
+                <article className={`notice-board-card notice-tone-${notice.category}`} key={notice.id}>
+                  <div className="notice-board-card-meta">
+                    <span className={`notice-category-tag category-${notice.category}`}>{noticeCategoryLabels[notice.category]}</span>
+                    <time dateTime={notice.createdAt}>{formatNoticeDate(notice.createdAt)}</time>
+                  </div>
+                  <h2>{notice.title}</h2>
+                  <p>{notice.body}</p>
+                  <span className="notice-board-number">{String(index + 1).padStart(2, '0')}</span>
+                </article>
+              ))}
+            </div>
+          ) : <div className="notice-empty notice-board-empty">No notices match your search. Try a different search or category.</div>}
         </main>
       )
     }
@@ -305,11 +549,11 @@ function App() {
             <a className="section-link" href="/notices" onClick={(event) => navigate(event, '/notices')}>All notices <ArrowRight size={16} /></a>
           </div>
           <div className="notice-grid">
-            {notices.map((notice, index) => (
-              <a className={`notice-card ${notice.tone}`} href="/notices" key={notice.title} onClick={(event) => navigate(event, '/notices')}>
-                <div className="notice-meta"><span>{notice.category}</span><span>0{index + 1}</span></div>
+            {latestNotices.map((notice, index) => (
+              <a className={`notice-card notice-tone-${notice.category}`} href="/notices" key={notice.id} onClick={(event) => navigate(event, '/notices')}>
+                <div className="notice-meta"><span>{noticeCategoryLabels[notice.category]}</span><span>0{index + 1}</span></div>
                 <h3>{notice.title}</h3>
-                <div className="notice-bottom"><span>{notice.date}</span><span className="round-arrow"><ArrowRight size={16} /></span></div>
+                <div className="notice-bottom"><span>{formatNoticeDate(notice.createdAt)}</span><span className="round-arrow"><ArrowRight size={16} /></span></div>
               </a>
             ))}
           </div>

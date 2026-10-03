@@ -82,7 +82,9 @@ We kept it simple and popular so any student developer can understand and contin
 
 ## Current frontend implementation
 
-The current Vite app includes the responsive public navigation, mobile bottom tabs and menu, theme toggle, landing page sections, and an admin dashboard preview. Navigation is client-side; sign-in and admin preview actions are UI demonstrations only and are not connected to an authentication service or backend yet.
+The current Vite app includes responsive public navigation, mobile bottom tabs and menu, a searchable notice board with Exam, Event, Scholarship, and General categories, and an admin dashboard preview. Admins can create, edit, and delete notices from **Admin → Notices**; public notice listings and the homepage update from the same saved collection. Notices are stored in the current browser and synchronized between tabs on the same origin.
+
+Authentication and notice storage are frontend demonstrations only: admin access is not secure and notice changes are not shared with other devices or users. Connect an authentication service and shared backend before using this system for real student communications.
 
 Run the frontend locally with `npm install` followed by `npm run dev`. Use `npm run build` to run the TypeScript checks and create a production build.
 

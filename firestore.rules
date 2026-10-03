@@ -1,0 +1,139 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function verifiedEmailAccount() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function verifiedStudent() {
+      return verifiedEmailAccount()
+        && exists(/databases/$(database)/documents/studentVerifications/$(request.auth.uid))
+        && get(/databases/$(database)/documents/studentVerifications/$(request.auth.uid)).data.status == 'approved';
+    }
+
+    function isAdmin() {
+      return verifiedEmailAccount()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    function ownsSupportRequest() {
+      return verifiedStudent() && resource.data.userId == request.auth.uid;
+    }
+
+    match /admins/{uid} {
+      allow get: if verifiedEmailAccount() && request.auth.uid == uid;
+      allow list, create, update, delete: if false;
+    }
+
+    match /studentVerifications/{uid} {
+      allow create: if verifiedEmailAccount()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly([
+          'email', 'displayName', 'studentId', 'status', 'submittedAt'
+        ])
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.displayName is string
+        && request.resource.data.displayName.size() <= 100
+        && request.resource.data.studentId is string
+        && request.resource.data.studentId.size() >= 3
+        && request.resource.data.studentId.size() <= 64
+        && request.resource.data.status == 'pending'
+        && request.resource.data.submittedAt is timestamp;
+      allow get: if (signedIn() && request.auth.uid == uid) || isAdmin();
+      allow list: if isAdmin();
+      allow update: if (
+          isAdmin()
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'reviewedAt', 'reviewedBy'])
+          && request.resource.data.status in ['approved', 'rejected']
+          && request.resource.data.reviewedAt is timestamp
+          && request.resource.data.reviewedBy == request.auth.uid
+        ) || (
+          verifiedEmailAccount()
+          && request.auth.uid == uid
+          && resource.data.status == 'rejected'
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['studentId', 'status', 'submittedAt'])
+          && request.resource.data.email == resource.data.email
+          && request.resource.data.displayName == resource.data.displayName
+          && request.resource.data.studentId is string
+          && request.resource.data.studentId.size() >= 3
+          && request.resource.data.studentId.size() <= 64
+          && request.resource.data.status == 'pending'
+          && request.resource.data.submittedAt is timestamp
+        );
+      allow delete: if false;
+    }
+
+    match /users/{uid} {
+      allow create: if verifiedStudent()
+        && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['email', 'displayName', 'studentId', 'createdAt'])
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.studentId == 'FSU-' + request.auth.uid
+        && request.resource.data.displayName is string
+        && request.resource.data.createdAt is timestamp;
+      allow read: if (verifiedStudent() && request.auth.uid == uid) || isAdmin();
+      allow update: if verifiedStudent()
+        && request.auth.uid == uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['displayName']);
+      allow delete: if false;
+    }
+
+    match /supportRequests/{requestId} {
+      allow create: if verifiedStudent()
+        && request.resource.data.keys().hasOnly([
+          'userId', 'studentId', 'category', 'summary', 'status', 'createdAt'
+        ])
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.studentId == 'FSU-' + request.auth.uid
+        && request.resource.data.category is string
+        && request.resource.data.category in [
+          'Help or guidance', 'Infrastructure', 'Washroom / Cleanliness',
+          'Fee / Administration', 'Unfair treatment', 'Academic',
+          'Suggestion', 'Other'
+        ]
+        && request.resource.data.summary is string
+        && request.resource.data.summary.size() > 0
+        && request.resource.data.summary.size() <= 4000
+        && request.resource.data.status == 'Received'
+        && request.resource.data.createdAt is timestamp;
+      allow get, list: if isAdmin() || ownsSupportRequest();
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'assignedTo', 'updatedAt'])
+        && request.resource.data.status in ['Received', 'In progress', 'Solved'];
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        function parentRequest() {
+          return get(/databases/$(database)/documents/supportRequests/$(requestId));
+        }
+
+        function canReadThread() {
+          return isAdmin()
+            || (verifiedStudent() && parentRequest().data.userId == request.auth.uid);
+        }
+
+        allow get, list: if canReadThread();
+        allow create: if verifiedStudent()
+          && canReadThread()
+          && request.resource.data.keys().hasOnly(['senderId', 'senderRole', 'body', 'createdAt'])
+          && request.resource.data.senderId == request.auth.uid
+          && request.resource.data.senderRole == (isAdmin() ? 'admin' : 'student')
+          && request.resource.data.body is string
+          && request.resource.data.body.size() > 0
+          && request.resource.data.body.size() <= 4000
+          && request.resource.data.createdAt is timestamp;
+        allow update, delete: if false;
+      }
+    }
+  }
+}

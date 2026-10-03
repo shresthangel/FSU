@@ -1,0 +1,326 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Hack Our Campus — FSU Portal</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+<!-- ================= HEADER ================= -->
+<header class="site-header">
+  <div class="announcement-bar">
+    <span class="announcement-label">FROM YOUR STUDENTS’ UNION</span>
+    <span>Updates, events and support for campus life.</span>
+    <button class="announcement-link" data-page="notices">View notices <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+  </div>
+  <div class="container header-inner">
+    <a href="#" class="brand" data-page="home" aria-label="Free Students Union home">
+      <span class="brand-mark" aria-hidden="true">FSU</span>
+      <span class="brand-lockup"><strong>Free Students’ Union</strong><span>STUDENT PORTAL</span></span>
+    </a>
+    <button id="navToggle" class="nav-toggle" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mainNav"><svg id="navToggleIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg></button>
+    <nav id="mainNav" class="main-nav" aria-label="Main navigation">
+      <a href="#" data-page="home" class="active" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"/></svg><span>Home</span></a>
+      <a href="#" data-page="notices"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M10 21h4"/></svg><span>Notices</span></a>
+      <a href="#" data-page="events"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg><span>Events</span></a>
+      <a href="#" data-page="complaints"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8A8.5 8.5 0 0 1 8.7 3.9a8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/></svg><span>Help &amp; private inbox</span></a>
+      <a href="#" data-page="lostfound"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></svg><span>Lost &amp; Found</span></a>
+      <div class="nav-more">
+        <button id="moreToggle" class="more-toggle" type="button" aria-expanded="false" aria-controls="moreMenu"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg><span>More</span><span class="more-chevron" aria-hidden="true">⌄</span></button>
+        <div id="moreMenu" class="more-menu hidden">
+          <a href="#" data-page="opportunities"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m2 9 10-5 10 5-10 5z"/><path d="M6 11v5c3 3 9 3 12 0v-5M22 9v6"/></svg>Opportunities</a>
+          <a href="#" data-page="gallery">Campus gallery</a>
+          <a href="#" data-page="team">Meet the team</a>
+          <a href="#" data-page="admin" class="nav-admin hidden">Admin dashboard</a>
+        </div>
+      </div>
+    </nav>
+    <div class="header-actions">
+      <button id="themeToggle" class="theme-toggle" type="button" aria-label="Switch to dark mode" title="Switch theme">
+        <svg class="theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.9 13A8.5 8.5 0 0 1 11 3.1 8.5 8.5 0 1 0 20.9 13Z"/></svg>
+        <svg class="theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M2 12h2m16 0h2M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42"/></svg>
+      </button>
+      <a href="#" class="header-support" data-page="complaints"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8A8.5 8.5 0 0 1 8.7 3.9a8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/></svg><span>Submit complaint</span></a>
+      <a href="#" id="authNav" class="header-login" data-page="login"><svg class="profile-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="3.5"/><path d="M5 21c.8-4 3.1-6 7-6s6.2 2 7 6"/></svg><span id="authNavLabel">Log in</span></a>
+      <button id="createAccountCta" class="btn btn-primary header-create" type="button">Create account <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </div>
+  </div>
+</header>
+
+<main class="container">
+
+  <!-- ================= HOME ================= -->
+  <section id="page-home" class="page active">
+    <div class="hero">
+      <div class="hero-copy">
+        <p class="hero-pill">FREE STUDENTS’ UNION <span aria-hidden="true">/</span> CAMPUS COMMUNITY</p>
+        <h1>A better campus<br>starts with <span>us.</span></h1>
+        <p class="lead">Your union is here to keep you informed, help you speak up, and make student life better—together.</p>
+        <div class="hero-actions">
+          <button class="btn btn-primary hero-speak-up" data-page="complaints">Talk to your union <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+          <button class="hero-about" data-page="events">Explore campus life <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+        </div>
+        <p class="hero-trust">Student-led. Here for every student.</p>
+      </div>
+      <div class="hero-visual">
+        <img class="hero-campus-photo" src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&amp;fit=crop&amp;w=1400&amp;q=85" alt="University students spending time together on campus" fetchpriority="high">
+        <p class="hero-image-caption"><span>STUDENT LIFE</span> &nbsp; A stronger campus, together.</p>
+      </div>
+    </div>
+
+    <div class="stats" id="homeStats"></div>
+
+    <div class="section-heading">
+      <div><p class="eyebrow">STUDENT SERVICES</p><h2>Explore the portal</h2></div>
+      <p class="muted">Useful information and support for campus life.</p>
+    </div>
+    <div class="feature-grid">
+      <button class="feature-card feature-voice" data-page="complaints">
+        <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M21 11.5a8.4 8.4 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8A8.5 8.5 0 0 1 8.7 3.9a8.4 8.4 0 0 1 3.8-.9h.5a8.5 8.5 0 0 1 8 8z"/><path d="M8.5 12h7"/></svg></span>
+        <span class="feature-label">STUDENT SUPPORT</span>
+        <strong>Help and guidance</strong><span class="feature-link">Contact the FSU <b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b></span>
+      </button>
+      <button class="feature-card feature-notices" data-page="notices">
+        <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2Z"/><path d="M8 7h8M8 11h7"/></svg></span>
+        <span class="feature-label">UPDATES</span>
+        <strong>Notices</strong><span class="feature-link">View notices <b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b></span>
+      </button>
+      <button class="feature-card feature-events" data-page="events">
+        <span class="feature-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg></span>
+        <span class="feature-label">CAMPUS LIFE</span>
+        <strong>Events</strong><span class="feature-link">View events <b><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></b></span>
+      </button>
+    </div>
+
+    <div class="home-bottom grid grid-2">
+      <section class="card home-latest">
+        <div class="between"><div><p class="eyebrow">FRESH OFF THE BOARD</p><h3>Latest notices</h3></div><button class="text-link" data-page="notices">All notices <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>
+        <div id="homeNotices"></div>
+      </section>
+      <section class="home-cta">
+        <p class="eyebrow">NEED ASSISTANCE?</p>
+        <h2>Get in touch with the FSU.</h2>
+        <p>Send a private message to the union and follow replies in your inbox.</p>
+        <button class="btn btn-primary" data-page="complaints">Open student support <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+      </section>
+    </div>
+  </section>
+
+  <!-- ================= NOTICES ================= -->
+  <section id="page-notices" class="page">
+    <h2 class="page-title">Notice board</h2>
+    <p class="page-sub">Latest notices from the Free Student Union.</p>
+
+    <div class="card filter-bar">
+      <input type="search" id="noticeSearch" placeholder="Search notices..." />
+      <select id="noticeCategory">
+        <option value="all">All categories</option>
+        <option value="exam">Exam</option>
+        <option value="event">Event</option>
+        <option value="scholarship">Scholarship</option>
+        <option value="general">General</option>
+      </select>
+    </div>
+
+    <div id="noticeList" class="grid grid-2"></div>
+  </section>
+
+  <!-- ================= ACCOUNT ================= -->
+  <section id="page-login" class="page">
+    <div class="login-card card">
+      <div id="accountSignedOut">
+        <p class="eyebrow">FSU PORTAL ACCOUNT</p>
+        <h2 id="authHeading">Sign in</h2>
+        <p class="muted small">Create an account with any email address. Portal access is enabled after an FSU admin verifies your campus student ID.</p>
+        <div id="authSetupNotice" class="alert alert-warning hidden" role="status"></div>
+        <div id="authResult" aria-live="polite"></div>
+        <form id="authForm" class="form mt-1">
+          <div id="authNameField" class="field hidden">
+            <label for="authName">Full name</label>
+            <input id="authName" type="text" autocomplete="name" />
+          </div>
+          <div class="field">
+            <label for="authEmail">Email</label>
+            <input id="authEmail" type="email" autocomplete="email" maxlength="254" required placeholder="you@example.com" />
+          </div>
+          <div class="field">
+            <label for="authPassword">Password</label>
+            <input id="authPassword" type="password" autocomplete="current-password" minlength="1" required placeholder="Password" />
+          </div>
+          <button id="authSubmit" class="btn btn-primary" type="submit">Sign in</button>
+        </form>
+        <div class="auth-actions">
+          <button id="authModeToggle" class="text-link" type="button">Create a student account</button>
+          <button id="resetPassword" class="text-link" type="button">Forgot password?</button>
+        </div>
+      </div>
+      <div id="accountSignedIn" class="hidden">
+        <p id="accountRoleEyebrow" class="eyebrow">YOUR STUDENT ACCOUNT</p>
+        <h2 id="accountHeading">You're signed in</h2>
+        <p id="accountEmail" class="muted"></p>
+        <div id="accountVerificationNotice" class="alert alert-info" role="status"></div>
+        <div id="accountAccessNotice" class="alert alert-warning hidden" role="status"></div>
+        <section id="studentVerificationPanel" class="card hidden">
+          <p class="eyebrow">CAMPUS MEMBERSHIP CHECK</p>
+          <h3 id="studentVerificationHeading">Verify your student account</h3>
+          <p id="studentVerificationDescription" class="muted small">Enter the student ID issued by your campus. An FSU admin will check it before portal access is enabled.</p>
+          <div id="studentVerificationResult" aria-live="polite"></div>
+          <form id="studentVerificationForm" class="form">
+            <div class="field">
+              <label for="campusStudentId">Campus student ID</label>
+              <input id="campusStudentId" type="text" autocomplete="off" maxlength="64" required placeholder="Enter the ID on your student card">
+            </div>
+            <button class="btn btn-primary" type="submit">Submit for verification</button>
+          </form>
+        </section>
+        <div id="student-id-card" class="student-id-card"><span class="muted small">Your private student ID</span><strong id="studentId"></strong><button id="copyStudentId" type="button" class="btn btn-outline btn-sm">Copy ID</button></div>
+        <p class="muted small">Use this ID when contacting the FSU. Staff can reply to your private inbox.</p>
+        <div class="card-actions"><button id="accountPrimaryAction" class="btn btn-primary" data-page="complaints">Open my inbox</button><button id="signOut" class="btn btn-outline" type="button">Sign out</button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= COMPLAINTS ================= -->
+  <section id="page-complaints" class="page">
+    <p class="eyebrow">PRIVATE STUDENT SUPPORT</p>
+    <h2 class="page-title">Help, guidance &amp; your inbox</h2>
+    <p class="page-sub">Ask the FSU for help or guidance. Your messages and replies are visible only to you and authorized FSU admins.</p>
+    <div id="supportAuthRequired" class="card">
+      <h3>Sign in to contact the FSU</h3>
+      <p class="muted">A verified student account gives you a private inbox and a unique student ID.</p>
+      <button class="btn btn-primary" data-page="login">Sign in or create account</button>
+    </div>
+
+    <div id="supportWorkspace" class="grid grid-2 hidden">
+      <form id="complaintForm" class="card form">
+        <div class="field">
+          <label for="cCategory">What do you need help with?</label>
+          <select id="cCategory">
+            <option>Help or guidance</option>
+            <option>Infrastructure</option>
+            <option>Washroom / Cleanliness</option>
+            <option>Fee / Administration</option>
+            <option>Unfair treatment</option>
+            <option>Academic</option>
+            <option>Suggestion</option>
+            <option>Other</option>
+          </select>
+        </div>
+
+        <div class="field">
+          <label for="cMessage">Describe the problem</label>
+          <textarea id="cMessage" rows="4" maxlength="4000" required
+            placeholder="Tell the FSU what you need help with. Only you and authorized FSU admins can read this message."></textarea>
+        </div>
+        <button class="btn btn-primary" type="submit">Send private message</button>
+        <div id="complaintResult" aria-live="polite"></div>
+      </form>
+      <section class="support-inbox"><div class="between"><div><p class="eyebrow">ONLY YOU CAN SEE THIS</p><h3>Your private conversations</h3></div><span id="supportStudentId" class="tag"></span></div><div id="supportThreads" aria-live="polite"></div></section>
+    </div>
+  </section>
+
+  <!-- ================= EVENTS ================= -->
+  <section id="page-events" class="page">
+    <h2 class="page-title">Events &amp; registration</h2>
+    <p class="page-sub">See upcoming programs, register, and help the FSU decide what to organize next.</p>
+    <div id="eventList" class="grid"></div>
+  </section>
+
+  <!-- ================= OPPORTUNITIES ================= -->
+  <section id="page-opportunities" class="page">
+    <h2 class="page-title">Opportunities</h2>
+    <p class="page-sub">Scholarships, internships, trainings and competitions.</p>
+    <div id="opportunityList" class="grid grid-2"></div>
+  </section>
+
+  <!-- ================= LOST & FOUND ================= -->
+  <section id="page-lostfound" class="page">
+    <h2 class="page-title">Lost &amp; found</h2>
+    <p class="page-sub">Post something you lost or found on campus.</p>
+
+    <div id="lostFoundAccessNotice" class="alert alert-info hidden">
+    Sign in with a verified email and get your student ID approved to post a lost or found item.
+    <button class="text-link" type="button" data-page="login">Sign in / verify student ID</button>
+    </div>
+    <form id="lostFoundForm" class="card form" style="margin-bottom:1.25rem">
+      <div class="grid grid-2">
+        <div class="field">
+          <label for="lfType">Type</label>
+          <select id="lfType">
+            <option value="lost">I lost something</option>
+            <option value="found">I found something</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="lfTitle">Item</label>
+          <input id="lfTitle" required placeholder="e.g. Black wallet" />
+        </div>
+      </div>
+      <div class="grid grid-2">
+        <div class="field">
+          <label for="lfLocation">Location</label>
+          <input id="lfLocation" required placeholder="e.g. Block B canteen" />
+        </div>
+        <div class="field">
+          <label for="lfContact">Contact</label>
+          <input id="lfContact" required placeholder="10-digit phone or valid email" />
+        </div>
+      </div>
+      <div class="field">
+        <label for="lfDesc">Details</label>
+        <textarea id="lfDesc" rows="3" placeholder="Any extra detail..."></textarea>
+      </div>
+      <div class="field">
+        <label for="lfPhoto">Item photo (optional)</label>
+        <input id="lfPhoto" type="file" accept="image/jpeg,image/png,image/webp,image/gif" />
+        <span class="muted small">JPEG, PNG, WebP, or GIF; up to 1 MB.</span>
+      </div>
+      <button class="btn btn-primary" type="submit">Post</button>
+    </form>
+
+    <div id="lostFoundList" class="grid grid-2"></div>
+  </section>
+
+  <!-- ================= GALLERY ================= -->
+  <section id="page-gallery" class="page">
+    <h2 class="page-title">Gallery</h2>
+    <p class="page-sub">Photos from past programs.</p>
+    <div id="galleryList" class="grid gallery-grid"></div>
+  </section>
+
+  <!-- ================= TEAM ================= -->
+  <section id="page-team" class="page">
+    <h2 class="page-title">Meet the team</h2>
+    <p class="page-sub">The students behind Hack Our Campus.</p>
+    <div id="teamList" class="grid grid-2"></div>
+  </section>
+
+  <!-- ================= ADMIN ================= -->
+  <section id="page-admin" class="page">
+    <div id="adminArea"></div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="container">
+    <p><strong>Free Students’ Union</strong></p>
+    <p class="muted small">Student voice, campus updates and support—all in one place.</p>
+    <p class="muted small">Verify your email, then get your student ID approved by an FSU admin to unlock student services.</p>
+  </div>
+</footer>
+
+<!-- Modal + Toast -->
+<div id="modal" class="modal-backdrop hidden">
+  <div class="modal" role="dialog" aria-modal="true" aria-label="FSU portal dialog">
+    <button class="modal-close" id="modalClose" aria-label="Close">×</button>
+    <div id="modalBody"></div>
+  </div>
+</div>
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>

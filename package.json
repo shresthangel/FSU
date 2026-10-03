@@ -1,0 +1,37 @@
+{
+  "name": "incognito-mode-fsu-portal",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.js",
+    "build": "vite build",
+    "start": "node server.js --production",
+    "preview": "node server.js --production",
+    "test": "npm run test:firebase",
+    "test:firebase": "firebase emulators:exec --project demo-fsu-portal --only firestore \"node --test tests/firestore.rules.test.js\""
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "^1.3.3",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "express": "^5.2.1",
+    "fflate": "^0.8.3",
+    "firebase": "^12.4.0",
+    "lucide-react": "^1.51.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "tailwind-merge": "^3.7.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^5.2.0",
+    "firebase-tools": "^14.0.0",
+    "tailwindcss": "^4.3.3",
+    "vite": "^7.1.9"
+  },
+  "overrides": {
+    "@grpc/grpc-js": "^1.14.5"
+  }
+}

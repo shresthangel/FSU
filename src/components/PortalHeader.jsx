@@ -3,6 +3,7 @@ import {
   ArrowRight,
   Bell,
   CalendarDays,
+  ChevronDown,
   GraduationCap,
   Home,
   Images,
@@ -68,7 +69,7 @@ export default function PortalHeader() {
             <Button id="moreToggle" className="more-toggle" variant="ghost" type="button" aria-expanded="false" aria-controls="moreMenu">
               <Icon component={MoreHorizontal} />
               <span>More</span>
-              <span className="more-chevron" aria-hidden="true">⌄</span>
+              <Icon component={ChevronDown} className="more-chevron" />
             </Button>
             <div id="moreMenu" className="more-menu hidden">
               {moreNavigation.map(({ page, label, Icon: PageIcon, className }) => (

@@ -77,7 +77,6 @@ We kept it simple and popular so any student developer can understand and contin
 | Backend | Node.js + Express |
 | Database | Firebase / Supabase |
 | Login | Firebase |
-| Emails and alerts | Nodemailer |
 | Hosting | Vercel, Render, CloudFare |
 | Version control | Git + GitHub |
 

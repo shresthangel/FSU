@@ -6,6 +6,12 @@ service firebase.storage {
       return request.auth != null && request.auth.token.email_verified == true;
     }
 
+    function verifiedStudent() {
+      return verified()
+        && firestore.exists(/databases/(default)/documents/studentVerifications/$(request.auth.uid))
+        && firestore.get(/databases/(default)/documents/studentVerifications/$(request.auth.uid)).data.status == 'approved';
+    }
+
     function isAdmin() {
       return verified()
         && firestore.exists(/databases/(default)/documents/admins/$(request.auth.uid))
@@ -16,29 +22,39 @@ service firebase.storage {
       return request.resource != null
         && request.resource.size > 0
         && request.resource.size <= maxBytes
-        && request.resource.contentType.matches('image/(jpeg|png|webp)');
+        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
     }
 
     match /gallery/{fileName} {
       allow read: if true;
       allow create, update: if isAdmin()
-        && fileName.matches('^[A-Za-z0-9_-]{1,128}\\.(jpg|jpeg|png|webp)$')
+        && fileName.matches('^[A-Za-z0-9_-]{1,128}\\.(jpg|jpeg|png|webp|gif)$')
         && validImageUpload(10485760);
       allow delete: if isAdmin();
     }
 
+    match /{collection}/{itemId}/{fileName} {
+      allow read: if collection in ['notices', 'events']
+        && fileName.matches('^image-[A-Za-z0-9_-]{1,128}\\.(jpg|jpeg|png|webp|gif)$');
+      allow create, update: if isAdmin()
+        && collection in ['notices', 'events']
+        && itemId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && fileName.matches('^image-[A-Za-z0-9_-]{1,128}\\.(jpg|jpeg|png|webp|gif)$')
+        && validImageUpload(5242880);
+      allow delete: if isAdmin()
+        && collection in ['notices', 'events']
+        && itemId.matches('^[A-Za-z0-9_-]{1,128}$')
+        && fileName.matches('^image-[A-Za-z0-9_-]{1,128}\\.(jpg|jpeg|png|webp|gif)$');
+    }
+
     match /lostFound/{ownerUid}/{postId}/{fileName} {
-      allow read: if isAdmin()
-        || (verified() && request.auth.uid == ownerUid)
-        || (firestore.exists(/databases/(default)/documents/lostFound/$(postId))
-          && firestore.get(/databases/(default)/documents/lostFound/$(postId)).data.ownerUid == ownerUid
-          && firestore.get(/databases/(default)/documents/lostFound/$(postId)).data.approved == true);
-      allow create, update: if verified()
+      allow read: if true;
+      allow create, update: if verifiedStudent()
         && request.auth.uid == ownerUid
         && postId.matches('^[A-Za-z0-9_-]{1,128}$')
-        && fileName.matches('^[A-Za-z0-9_-]{1,80}\\.(jpg|jpeg|png|webp)$')
+        && fileName.matches('^photo\\.(jpg|jpeg|png|webp|gif)$')
         && validImageUpload(5242880);
-      allow delete: if (verified() && request.auth.uid == ownerUid) || isAdmin();
+      allow delete: if (verifiedStudent() && request.auth.uid == ownerUid) || isAdmin();
     }
   }
 }

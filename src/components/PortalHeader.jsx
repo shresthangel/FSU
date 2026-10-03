@@ -42,17 +42,10 @@ function Icon({ component: Component, className }) {
 export default function PortalHeader() {
   return (
     <header className="site-header">
-      <div className="announcement-bar">
-        <span className="announcement-label">FROM YOUR STUDENTS’ UNION</span>
-        <span>Updates, events and support for campus life.</span>
-        <Button className="announcement-link" variant="link" type="button" data-page="notices">
-          View notices <Icon component={ArrowRight} />
-        </Button>
-      </div>
       <div className="container header-inner">
         <a href="#" className="brand" data-page="home" aria-label="Free Students Union home">
-          <span className="brand-mark" aria-hidden="true">FSU</span>
-          <span className="brand-lockup"><strong>Free Students’ Union</strong><span>STUDENT PORTAL</span></span>
+          <span className="brand-mark" aria-hidden="true">F</span>
+          <span className="brand-lockup"><strong>free students</strong><span>UNION</span></span>
         </a>
         <Button id="navToggle" className="nav-toggle" variant="outline" size="icon" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mainNav" type="button">
           <Menu className="menu-open-icon" aria-hidden="true" />

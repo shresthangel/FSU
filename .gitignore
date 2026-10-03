@@ -1,10 +1,9 @@
-<<<<<<< HEAD
 node_modules/
 dist/
 .env
 .env.*
 !.env.example
-=======
+
 # Logs
 logs
 *.log
@@ -29,4 +28,3 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
->>>>>>> 49dbf8b23be29a23e4d0514e7487164ee484838e

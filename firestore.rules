@@ -6,7 +6,6 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-<<<<<<< HEAD
     function verifiedEmailAccount() {
       return signedIn() && request.auth.token.email_verified == true;
     }
@@ -19,19 +18,10 @@ service cloud.firestore {
 
     function isAdmin() {
       return verifiedEmailAccount()
-=======
-    function verified() {
-      return signedIn() && request.auth.token.email_verified == true;
-    }
-
-    function isAdmin() {
-      return verified()
->>>>>>> 49dbf8b23be29a23e4d0514e7487164ee484838e
         && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
         && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.role == 'admin';
     }
 
-<<<<<<< HEAD
     function ownsSupportRequest() {
       return verifiedStudent() && resource.data.userId == request.auth.uid;
     }
@@ -39,6 +29,86 @@ service cloud.firestore {
     match /admins/{uid} {
       allow get: if verifiedEmailAccount() && request.auth.uid == uid;
       allow list, create, update, delete: if false;
+    }
+
+    match /portalContent/{contentId} {
+      allow get: if contentId == 'public';
+      allow list: if false;
+      allow create, update, delete: if contentId == 'public' && isAdmin();
+    }
+
+    match /events/{eventId}/registrations/{studentUid} {
+      allow get: if isAdmin() || (verifiedStudent() && request.auth.uid == studentUid);
+      allow list: if isAdmin();
+      allow create: if verifiedStudent()
+        && request.auth.uid == studentUid
+        && request.resource.data.keys().hasOnly([
+          'eventId', 'userUid', 'name', 'email', 'phone', 'dept', 'notes', 'date'
+        ])
+        && request.resource.data.eventId == eventId
+        && request.resource.data.userUid == studentUid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.phone.matches('^[0-9]{10}$')
+        && request.resource.data.dept is string
+        && request.resource.data.dept.size() > 0
+        && request.resource.data.dept.size() <= 100
+        && request.resource.data.notes is string
+        && request.resource.data.notes.size() <= 1000
+        && request.resource.data.date is string;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    match /events/{eventId}/feedback/{studentUid} {
+      allow get: if isAdmin() || (verifiedStudent() && request.auth.uid == studentUid);
+      allow list: if isAdmin();
+      allow create: if verifiedStudent()
+        && request.auth.uid == studentUid
+        && request.resource.data.keys().hasOnly([
+          'eventId', 'userUid', 'choice', 'suggestion', 'submittedAt'
+        ])
+        && request.resource.data.eventId == eventId
+        && request.resource.data.userUid == studentUid
+        && request.resource.data.choice in ['Yes', 'No', 'Maybe']
+        && request.resource.data.suggestion is string
+        && request.resource.data.suggestion.size() <= 1000
+        && request.resource.data.submittedAt is string;
+      allow update: if false;
+      allow delete: if isAdmin();
+    }
+
+    match /lostFoundPosts/{postId} {
+      allow get: if isAdmin() || resource.data.approved == true
+        || (verifiedStudent() && resource.data.ownerUid == request.auth.uid);
+      allow list: if isAdmin() || resource.data.approved == true;
+      allow create: if verifiedStudent()
+        && request.resource.data.keys().hasOnly([
+          'id', 'type', 'title', 'location', 'contact', 'description', 'date',
+          'approved', 'ownerUid', 'photo', 'photoPath'
+        ])
+        && request.resource.data.id == postId
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.type in ['lost', 'found']
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.location is string
+        && request.resource.data.location.size() <= 160
+        && request.resource.data.contact is string
+        && request.resource.data.contact.size() <= 254
+        && request.resource.data.description is string
+        && request.resource.data.description.size() <= 2000
+        && request.resource.data.date is string
+        && request.resource.data.approved == true
+        && (!('photo' in request.resource.data) || request.resource.data.photo is string)
+        && (!('photoPath' in request.resource.data) || request.resource.data.photoPath is string);
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['approved'])
+        && request.resource.data.approved is bool;
+      allow delete: if isAdmin();
     }
 
     match /studentVerifications/{uid} {
@@ -145,330 +215,5 @@ service cloud.firestore {
         allow update, delete: if false;
       }
     }
-=======
-    function isAdminUid(uid) {
-      return uid is string
-        && exists(/databases/$(database)/documents/admins/$(uid))
-        && get(/databases/$(database)/documents/admins/$(uid)).data.role == 'admin';
-    }
-
-    function validNotice(data) {
-      return data.keys().hasAll(['title', 'body', 'category', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['title', 'body', 'category', 'createdAt', 'updatedAt'])
-        && data.title is string && data.title.size() > 0 && data.title.size() <= 120
-        && data.body is string && data.body.size() > 0 && data.body.size() <= 5000
-        && data.category in ['exam', 'event', 'scholarship', 'general']
-        && data.createdAt is timestamp && data.updatedAt is timestamp;
-    }
-
-    function validEvent(data) {
-      return data.keys().hasAll(['title', 'description', 'location', 'startAt', 'endAt', 'published', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['title', 'description', 'location', 'startAt', 'endAt', 'published', 'createdAt', 'updatedAt'])
-        && data.title is string && data.title.size() > 0 && data.title.size() <= 160
-        && data.description is string && data.description.size() <= 5000
-        && data.location is string && data.location.size() <= 300
-        && data.startAt is timestamp && data.endAt is timestamp
-        && data.endAt >= data.startAt
-        && data.published is bool
-        && data.createdAt is timestamp && data.updatedAt is timestamp;
-    }
-
-    function validRegistration(data) {
-      return data.keys().hasAll(['name', 'email', 'phone', 'department', 'notes', 'registeredAt'])
-        && data.keys().hasOnly(['name', 'email', 'phone', 'department', 'notes', 'registeredAt'])
-        && data.name is string && data.name.size() > 0 && data.name.size() <= 120
-        && data.email is string && data.email.size() > 0 && data.email.size() <= 254
-        && data.phone is string && data.phone.size() <= 40
-        && data.department is string && data.department.size() <= 120
-        && data.notes is string && data.notes.size() <= 2000
-        && data.registeredAt is timestamp;
-    }
-
-    function validThread(data) {
-      return data.keys().hasAll(['ownerUid', 'category', 'status', 'assignedTo', 'lastMessage', 'createdAt', 'updatedAt', 'lastMessageAt'])
-        && data.keys().hasOnly(['ownerUid', 'category', 'status', 'assignedTo', 'lastMessage', 'createdAt', 'updatedAt', 'lastMessageAt'])
-        && data.ownerUid is string
-        && data.category is string && data.category.size() > 0 && data.category.size() <= 80
-        && data.status in ['Received', 'In progress', 'Solved']
-        && (data.assignedTo == null || isAdminUid(data.assignedTo))
-        && data.lastMessage is string && data.lastMessage.size() <= 2000
-        && data.createdAt is timestamp && data.updatedAt is timestamp && data.lastMessageAt is timestamp;
-    }
-
-    function validMessage(data) {
-      return data.keys().hasAll(['senderUid', 'body', 'createdAt'])
-        && data.keys().hasOnly(['senderUid', 'body', 'createdAt'])
-        && data.senderUid is string
-        && data.body is string && data.body.size() > 0 && data.body.size() <= 2000
-        && data.createdAt is timestamp;
-    }
-
-    function validPollOptions(options) {
-      return options is list
-        && options.size() >= 2 && options.size() <= 5
-        && options[0] is string && options[0].matches('^[A-Za-z0-9_-]{1,40}$')
-        && options[1] is string && options[1].matches('^[A-Za-z0-9_-]{1,40}$')
-        && options[0] != options[1]
-        && (options.size() < 3 || (options[2] is string
-          && options[2].matches('^[A-Za-z0-9_-]{1,40}$')
-          && options[2] != options[0] && options[2] != options[1]))
-        && (options.size() < 4 || (options[3] is string
-          && options[3].matches('^[A-Za-z0-9_-]{1,40}$')
-          && options[3] != options[0] && options[3] != options[1] && options[3] != options[2]))
-        && (options.size() < 5 || (options[4] is string
-          && options[4].matches('^[A-Za-z0-9_-]{1,40}$')
-          && options[4] != options[0] && options[4] != options[1]
-          && options[4] != options[2] && options[4] != options[3]));
-    }
-
-    function validPollResults(options, results) {
-      return results is map
-        && results.keys().hasAll(options) && results.keys().hasOnly(options)
-        && results[options[0]] is int && results[options[0]] >= 0
-        && results[options[1]] is int && results[options[1]] >= 0
-        && (options.size() < 3 || (results[options[2]] is int && results[options[2]] >= 0))
-        && (options.size() < 4 || (results[options[3]] is int && results[options[3]] >= 0))
-        && (options.size() < 5 || (results[options[4]] is int && results[options[4]] >= 0));
-    }
-
-    function validPoll(data) {
-      return data.keys().hasAll(['question', 'options', 'active', 'results', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['question', 'options', 'active', 'results', 'createdAt', 'updatedAt'])
-        && data.question is string && data.question.size() > 0 && data.question.size() <= 500
-        && validPollOptions(data.options)
-        && data.active is bool
-        && validPollResults(data.options, data.results)
-        && data.createdAt is timestamp && data.updatedAt is timestamp;
-    }
-
-    function validOpportunity(data) {
-      return data.keys().hasAll(['title', 'description', 'type', 'published', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['title', 'description', 'type', 'published', 'createdAt', 'updatedAt'])
-        && data.title is string && data.title.size() > 0 && data.title.size() <= 160
-        && data.description is string && data.description.size() <= 5000
-        && data.type in ['scholarship', 'internship', 'training', 'competition', 'resource']
-        && data.published is bool && data.createdAt is timestamp && data.updatedAt is timestamp;
-    }
-
-    function validPhotoPath(path, uid, postId) {
-      return path is string && path.size() <= 320
-        && (path == '' || (path.split('/').size() == 4
-          && path.split('/')[1] == uid && path.split('/')[2] == postId
-          && path.matches('^lostFound/[A-Za-z0-9_-]{1,128}/[A-Za-z0-9_-]{1,128}/[A-Za-z0-9_-]{1,80}\\.(jpg|jpeg|png|webp)$')));
-    }
-
-    function validLostFound(data, postId) {
-      return data.keys().hasAll(['ownerUid', 'itemName', 'kind', 'location', 'contactName', 'contactEmail', 'contactPhone', 'description', 'photoPath', 'approved', 'createdAt', 'updatedAt'])
-        && data.keys().hasOnly(['ownerUid', 'itemName', 'kind', 'location', 'contactName', 'contactEmail', 'contactPhone', 'description', 'photoPath', 'approved', 'createdAt', 'updatedAt'])
-        && data.ownerUid is string
-        && data.itemName is string && data.itemName.size() > 0 && data.itemName.size() <= 160
-        && data.kind in ['lost', 'found']
-        && data.location is string && data.location.size() > 0 && data.location.size() <= 300
-        && data.contactName is string && data.contactName.size() > 0 && data.contactName.size() <= 120
-        && data.contactEmail is string && data.contactEmail.size() > 0 && data.contactEmail.size() <= 254
-        && data.contactPhone is string && data.contactPhone.size() <= 40
-        && data.description is string && data.description.size() <= 3000
-        && validPhotoPath(data.photoPath, data.ownerUid, postId)
-        && data.approved is bool
-        && data.createdAt is timestamp && data.updatedAt is timestamp;
-    }
-
-    function validGallery(data) {
-      return data.keys().hasAll(['caption', 'storagePath', 'downloadUrl', 'createdAt'])
-        && data.keys().hasOnly(['caption', 'storagePath', 'downloadUrl', 'createdAt'])
-        && data.caption is string && data.caption.size() <= 500
-        && data.storagePath is string
-        && data.storagePath.matches('^gallery/[A-Za-z0-9_-]{1,128}\\.(jpg|jpeg|png|webp)$')
-        && data.downloadUrl is string && data.downloadUrl.size() <= 2048
-        && data.createdAt is timestamp;
-    }
-
-    function validPollVotePair(pollId, optionId) {
-      let pollPath = /databases/$(database)/documents/polls/$(pollId);
-      let votePath = /databases/$(database)/documents/polls/$(pollId)/votes/$(request.auth.uid);
-      return verified()
-        && exists(pollPath) && get(pollPath).data.active == true
-        && optionId in get(pollPath).data.options
-        && !exists(votePath) && existsAfter(votePath)
-        && getAfter(votePath).data.optionId == optionId
-        && getAfter(pollPath).data.active == true
-        && getAfter(pollPath).data.updatedAt == request.time
-        && getAfter(pollPath).data.results[optionId] == get(pollPath).data.results[optionId] + 1
-        && getAfter(pollPath).data.results.diff(get(pollPath).data.results).affectedKeys().hasOnly([optionId]);
-    }
-
-    match /admins/{uid} {
-      allow get: if signedIn() && request.auth.uid == uid;
-      allow list, create, update, delete: if false;
-    }
-
-    match /notices/{noticeId} {
-      allow read: if true;
-      allow create: if isAdmin()
-        && validNotice(request.resource.data)
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
-      allow update: if isAdmin()
-        && validNotice(request.resource.data)
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if isAdmin();
-    }
-
-    match /events/{eventId} {
-      allow read: if isAdmin() || resource.data.published == true;
-      allow create: if isAdmin()
-        && validEvent(request.resource.data)
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
-      allow update: if isAdmin()
-        && validEvent(request.resource.data)
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if isAdmin();
-
-      match /registrations/{uid} {
-        allow read: if isAdmin() || (verified() && request.auth.uid == uid);
-        allow create: if verified()
-          && request.auth.uid == uid
-          && validRegistration(request.resource.data)
-          && request.resource.data.registeredAt == request.time;
-        allow update, delete: if false;
-      }
-    }
-
-    match /supportThreads/{threadId} {
-      allow read: if isAdmin() || (verified() && resource.data.ownerUid == request.auth.uid);
-      allow create: if verified()
-        && validThread(request.resource.data)
-        && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.status == 'Received'
-        && request.resource.data.assignedTo == null
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.lastMessageAt == request.time;
-      allow update: if validThread(request.resource.data)
-        && request.resource.data.ownerUid == resource.data.ownerUid
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.lastMessageAt == request.time
-        && ((isAdmin())
-          || (verified()
-            && resource.data.ownerUid == request.auth.uid
-            && request.resource.data.status == resource.data.status
-            && request.resource.data.assignedTo == resource.data.assignedTo
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['lastMessage', 'updatedAt', 'lastMessageAt'])));
-      allow delete: if isAdmin();
-
-      match /messages/{messageId} {
-        allow read: if isAdmin()
-          || (verified() && get(/databases/$(database)/documents/supportThreads/$(threadId)).data.ownerUid == request.auth.uid);
-        allow create: if verified()
-          && validMessage(request.resource.data)
-          && request.resource.data.senderUid == request.auth.uid
-          && request.resource.data.createdAt == request.time
-          && (isAdmin()
-            || get(/databases/$(database)/documents/supportThreads/$(threadId)).data.ownerUid == request.auth.uid);
-        allow update, delete: if false;
-      }
-    }
-
-    match /polls/{pollId} {
-      allow read: if isAdmin() || resource.data.active == true;
-      allow create: if isAdmin()
-        && validPoll(request.resource.data)
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && request.resource.data.results[request.resource.data.options[0]] == 0
-        && request.resource.data.results[request.resource.data.options[1]] == 0
-        && (request.resource.data.options.size() < 3 || request.resource.data.results[request.resource.data.options[2]] == 0)
-        && (request.resource.data.options.size() < 4 || request.resource.data.results[request.resource.data.options[3]] == 0)
-        && (request.resource.data.options.size() < 5 || request.resource.data.results[request.resource.data.options[4]] == 0);
-      allow update: if isAdmin()
-          && validPoll(request.resource.data)
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.updatedAt == request.time
-          && request.resource.data.options == resource.data.options
-          && request.resource.data.results == resource.data.results
-        || verified()
-          && resource.data.active == true
-          && request.resource.data.active == true
-          && validPoll(request.resource.data)
-          && request.resource.data.question == resource.data.question
-          && request.resource.data.options == resource.data.options
-          && request.resource.data.createdAt == resource.data.createdAt
-          && request.resource.data.results is map
-          && request.resource.data.results.keys().hasAll(resource.data.options)
-          && request.resource.data.results.keys().hasOnly(resource.data.options)
-          && validPollVotePair(pollId, getAfter(/databases/$(database)/documents/polls/$(pollId)/votes/$(request.auth.uid)).data.optionId)
-          && request.resource.data.results.diff(resource.data.results).affectedKeys().hasOnly([
-            getAfter(/databases/$(database)/documents/polls/$(pollId)/votes/$(request.auth.uid)).data.optionId
-          ])
-          && request.resource.data.updatedAt == request.time;
-      allow delete: if isAdmin();
-
-      match /votes/{uid} {
-        allow read: if isAdmin() || (verified() && request.auth.uid == uid);
-        allow create: if verified()
-          && request.auth.uid == uid
-          && request.resource.data.keys().hasAll(['optionId', 'createdAt'])
-          && request.resource.data.keys().hasOnly(['optionId', 'createdAt'])
-          && request.resource.data.optionId is string
-          && request.resource.data.createdAt == request.time
-          && validPollVotePair(pollId, request.resource.data.optionId);
-        allow update, delete: if false;
-      }
-    }
-
-    match /opportunities/{opportunityId} {
-      allow read: if isAdmin() || resource.data.published == true;
-      allow create: if isAdmin()
-        && validOpportunity(request.resource.data)
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
-      allow update: if isAdmin()
-        && validOpportunity(request.resource.data)
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time;
-      allow delete: if isAdmin();
-    }
-
-    match /lostFound/{postId} {
-      allow read: if resource.data.approved == true
-        || isAdmin()
-        || (verified() && resource.data.ownerUid == request.auth.uid);
-      allow create: if verified()
-        && validLostFound(request.resource.data, postId)
-        && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.approved == false
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time;
-      allow update: if validLostFound(request.resource.data, postId)
-        && request.resource.data.ownerUid == resource.data.ownerUid
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time
-        && ((isAdmin())
-          || (verified()
-            && resource.data.ownerUid == request.auth.uid
-            && resource.data.approved == false
-            && request.resource.data.approved == false
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-              'itemName', 'kind', 'location', 'contactName', 'contactEmail',
-              'contactPhone', 'description', 'photoPath', 'updatedAt'
-            ])));
-      allow delete: if isAdmin();
-    }
-
-    match /gallery/{imageId} {
-      allow read: if true;
-      allow create: if isAdmin()
-        && validGallery(request.resource.data)
-        && request.resource.data.createdAt == request.time;
-      allow update: if isAdmin()
-        && validGallery(request.resource.data)
-        && request.resource.data.createdAt == resource.data.createdAt;
-      allow delete: if isAdmin();
-    }
->>>>>>> 49dbf8b23be29a23e4d0514e7487164ee484838e
   }
 }

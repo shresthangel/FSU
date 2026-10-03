@@ -5,6 +5,7 @@ import {
   collection,
   createUserWithEmailAndPassword,
   db,
+  deleteDoc,
   doc,
   firebaseProjectId,
   getDocs,
@@ -23,7 +24,9 @@ import {
   updateDoc,
   updateProfile,
   where,
+  storage,
 } from './firebase-client.js';
+import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 
 /* ============================================================
    Hack Our Campus — FSU Portal
@@ -51,6 +54,11 @@ let supportRequests = [];
 let supportMessages = new Map();
 let supportRequestsLoaded = false;
 let supportRequestsError = '';
+let lostFoundUnsubscribe = null;
+let participationUnsubscribers = [];
+let participationSubscriptionKey = '';
+let noticeDetailReturnFocus = null;
+let noticeDetailPreviousOverflow = '';
 
 /* ---------- ID generators ---------- */
 function uid(prefix = 'id') {
@@ -117,6 +125,7 @@ function lineIcon(name, className = '') {
     opportunity: ['sliders-horizontal', '<path d="M10 5H3"/><path d="M12 19H3"/><path d="M14 3v4"/><path d="M16 17v4"/><path d="M21 12h-9"/><path d="M21 19h-5"/><path d="M21 5h-7"/><path d="M8 10v4"/><path d="M8 12H3"/>'],
     support: ['message-circle', '<path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/>'],
     arrow: ['arrow-right', '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>'],
+    arrowUpRight: ['arrow-up-right', '<path d="M7 17 17 7"/><path d="M7 7h10v10"/>'],
     building: ['building-complex', '<path d="M10 12h4"/><path d="M10 8h4"/><path d="M14 21v-3a2 2 0 0 0-4 0v3"/><path d="M6 10H4a2 2 0 0 0-2 2v7a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2"/><path d="M6 21V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v16"/>'],
     clock: ['clock-3', '<circle cx="12" cy="12" r="10"/><path d="M12 6v6h4"/>'],
     location: ['map-pin', '<path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/>'],
@@ -238,6 +247,11 @@ function defaultState() {
 }
 
 let state = loadState();
+let portalContentUnsubscribe = null;
+let portalContentWriteTimer = null;
+let portalContentWriteQueue = Promise.resolve();
+let portalContentExists = false;
+let portalContentLoaded = false;
 
 function loadState() {
   try {
@@ -265,10 +279,258 @@ function loadState() {
 function saveState() {
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
-    return true;
   } catch (e) {
-    toast('Could not save data (storage full?)', 'error');
-    return false;
+    toast('Changes remain active, but this browser could not cache them.', 'error');
+  }
+  if (isAdminUser) queuePublicContentWrite();
+}
+
+function cacheStateLocally() {
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  } catch {
+    toast('Updated data could not be cached in this browser.', 'error');
+  }
+}
+
+function publicContentSnapshot() {
+  const bytes = value => new Blob([JSON.stringify(value)]).size;
+  const content = {
+    notices: state.notices,
+    events: state.events.map(event => {
+      const { registrations = [], feedbackPoll, ...publicEvent } = event;
+      return {
+        ...publicEvent,
+        registrationCount: registrations.length,
+        feedbackPoll: feedbackPoll
+          ? {
+              enabled: Boolean(feedbackPoll.enabled),
+              question: feedbackPoll.question || '',
+              feedbackCount: feedbackPoll.responses?.length || 0,
+            }
+          : null,
+        feedbackCount: feedbackPoll?.responses?.length || 0,
+      };
+    }),
+    opportunities: state.opportunities,
+    gallery: state.gallery,
+    team: state.team,
+    updatedAt: serverTimestamp(),
+  };
+  if (bytes(content) > 900_000) {
+    throw new Error('Published content is too large to store safely in Firestore. Remove large items or images and try again.');
+  }
+  return content;
+}
+
+function queuePublicContentWrite() {
+  if (!db || !isFirebaseConfigured) {
+    toast('Firebase is not configured; portal content was saved only in this browser.', 'error');
+    return;
+  }
+  clearTimeout(portalContentWriteTimer);
+  portalContentWriteTimer = setTimeout(() => persistPublicContentNow().catch(() => undefined), 250);
+}
+
+async function persistPublicContentNow() {
+  if (!db || !isFirebaseConfigured) {
+    throw new Error('Firebase is not configured; portal content cannot be saved to the cloud.');
+  }
+  clearTimeout(portalContentWriteTimer);
+  try {
+    const content = publicContentSnapshot();
+    const write = portalContentWriteQueue
+      .catch(() => undefined)
+      .then(() => setDoc(doc(db, 'portalContent', 'public'), content));
+    portalContentWriteQueue = write;
+    await write;
+    portalContentExists = true;
+  } catch (error) {
+    toast(`Cloud content could not be saved: ${firebaseErrorMessage(error)}`, 'error');
+    throw error;
+  }
+}
+
+function mergePublicContent(content) {
+  const currentEvents = new Map(state.events.map(event => [event.id, event]));
+  state = {
+    ...state,
+    notices: Array.isArray(content.notices) ? content.notices : state.notices,
+    events: Array.isArray(content.events) ? content.events.map(event => {
+      const localEvent = currentEvents.get(event.id);
+      return {
+        ...event,
+        registrations: localEvent?.registrations || [],
+        feedbackPoll: event.feedbackPoll
+          ? {
+              ...event.feedbackPoll,
+              feedbackCount: event.feedbackCount || event.feedbackPoll.feedbackCount || 0,
+              responses: localEvent?.feedbackPoll?.responses || [],
+            }
+          : null,
+      };
+    }) : state.events,
+    opportunities: Array.isArray(content.opportunities) ? content.opportunities : state.opportunities,
+    gallery: Array.isArray(content.gallery) ? content.gallery : state.gallery,
+    team: Array.isArray(content.team) ? content.team : state.team,
+  };
+  try {
+    localStorage.setItem(STORE_KEY, JSON.stringify(state));
+  } catch {
+    toast('Cloud content loaded, but this browser could not cache a local copy.', 'error');
+  }
+  renderHome();
+  if ($('#page-notices').classList.contains('active')) renderNotices();
+  if (!$('#noticeDetail').classList.contains('hidden')) {
+    const openNotice = state.notices.find(notice => notice.id === $('#noticeDetail').dataset.noticeId);
+    if (openNotice) renderNoticeDetail(openNotice);
+    else closeNoticeDetail();
+  }
+  if ($('#page-events').classList.contains('active')) renderEvents();
+  if ($('#page-opportunities').classList.contains('active')) renderOpportunities();
+  if ($('#page-lostfound').classList.contains('active')) renderLostFound();
+  if ($('#page-gallery').classList.contains('active')) renderGallery();
+  if ($('#page-admin').classList.contains('active') && isAdminUser) renderAdmin();
+  watchStudentParticipation();
+}
+
+function startPublicContentSync() {
+  if (!db || !isFirebaseConfigured || portalContentUnsubscribe) return;
+  portalContentUnsubscribe = onSnapshot(
+    doc(db, 'portalContent', 'public'),
+    snapshot => {
+      portalContentLoaded = true;
+      portalContentExists = snapshot.exists();
+      if (portalContentExists) mergePublicContent(snapshot.data());
+      else if (isAdminUser) queuePublicContentWrite();
+    },
+    error => {
+      toast(`Portal content could not be loaded from Firebase: ${firebaseErrorMessage(error)}`, 'error');
+    },
+  );
+}
+
+function stopParticipationSubscriptions() {
+  participationUnsubscribers.forEach(unsubscribe => unsubscribe());
+  participationUnsubscribers = [];
+  participationSubscriptionKey = '';
+}
+
+function watchStudentParticipation() {
+  if (!db || !hasCampusAccess() || isAdminUser) {
+    stopParticipationSubscriptions();
+    return;
+  }
+  const eventKey = state.events.map(event => event.id).join('|');
+  const userUid = currentUser.uid;
+  const subscriptionKey = `${userUid}:${eventKey}`;
+  if (participationSubscriptionKey === subscriptionKey) return;
+  stopParticipationSubscriptions();
+  participationSubscriptionKey = subscriptionKey;
+
+  for (const event of state.events) {
+    const registrationRef = doc(db, 'events', event.id, 'registrations', userUid);
+    participationUnsubscribers.push(onSnapshot(registrationRef, snapshot => {
+      const currentEvent = state.events.find(item => item.id === event.id);
+      if (!currentEvent) return;
+      currentEvent.registrations = snapshot.exists() ? [snapshot.data()] : [];
+      state.eventRegs = state.eventRegs.filter(id => id !== event.id);
+      if (snapshot.exists()) state.eventRegs.push(event.id);
+      currentEvent.registrationCount = Math.max(
+        currentEvent.registrationCount || 0,
+        currentEvent.registrations.length,
+      );
+      cacheStateLocally();
+      if ($('#page-events').classList.contains('active')) renderEvents();
+    }, error => {
+      toast(`Your event registration could not be loaded: ${firebaseErrorMessage(error)}`, 'error');
+    }));
+
+    const feedbackRef = doc(db, 'events', event.id, 'feedback', userUid);
+    participationUnsubscribers.push(onSnapshot(feedbackRef, snapshot => {
+      const currentEvent = state.events.find(item => item.id === event.id);
+      if (!currentEvent?.feedbackPoll) return;
+      currentEvent.feedbackPoll.responses = snapshot.exists()
+        ? [{ ...snapshot.data(), userId: userUid }]
+        : [];
+      currentEvent.feedbackPoll.feedbackCount = Math.max(
+        currentEvent.feedbackPoll.feedbackCount || 0,
+        currentEvent.feedbackPoll.responses.length,
+      );
+      cacheStateLocally();
+      if ($('#page-events').classList.contains('active')) renderEvents();
+    }, error => {
+      toast(`Your event feedback could not be loaded: ${firebaseErrorMessage(error)}`, 'error');
+    }));
+  }
+}
+
+function startLostFoundSync() {
+  if (!db || !isFirebaseConfigured || lostFoundUnsubscribe) return;
+  lostFoundUnsubscribe = onSnapshot(
+    query(collection(db, 'lostFoundPosts'), where('approved', '==', true)),
+    snapshot => {
+      state.lostfound = snapshot.docs.map(post => ({ ...post.data(), id: post.id }));
+      cacheStateLocally();
+      renderLostFound();
+      if ($('#page-home').classList.contains('active')) renderHome();
+    },
+    error => toast(`Lost & Found posts could not be loaded: ${firebaseErrorMessage(error)}`, 'error'),
+  );
+}
+
+async function loadAdminLostFound() {
+  if (!db || !isAdminUser) return;
+  try {
+    const posts = await getDocs(collection(db, 'lostFoundPosts'));
+    if (!isAdminUser) return;
+    state.lostfound = posts.docs.map(post => ({ ...post.data(), id: post.id }));
+    cacheStateLocally();
+  } catch (error) {
+    toast(`Lost & Found posts could not be loaded: ${firebaseErrorMessage(error)}`, 'error');
+  }
+}
+
+async function loadAdminEventParticipation() {
+  if (!db || !isAdminUser) return;
+  try {
+    const participation = await Promise.all(state.events.map(async event => {
+      const [registrations, feedback] = await Promise.all([
+        getDocs(collection(db, 'events', event.id, 'registrations')),
+        getDocs(collection(db, 'events', event.id, 'feedback')),
+      ]);
+      return {
+        eventId: event.id,
+        registrations: registrations.docs.map(item => item.data()),
+        responses: feedback.docs.map(item => ({ ...item.data(), userId: item.id })),
+      };
+    }));
+    if (!isAdminUser) return;
+    let publicCountsChanged = false;
+    participation.forEach(({ eventId, registrations, responses }) => {
+      const event = state.events.find(item => item.id === eventId);
+      if (!event) return;
+      if (event.registrationCount !== registrations.length
+        || (event.feedbackPoll && event.feedbackPoll.feedbackCount !== responses.length)) {
+        publicCountsChanged = true;
+      }
+      event.registrations = registrations;
+      event.registrationCount = registrations.length;
+      if (event.feedbackPoll) {
+        event.feedbackPoll.responses = responses;
+        event.feedbackPoll.feedbackCount = responses.length;
+      }
+    });
+    if (publicCountsChanged) saveState();
+    if ($('#page-admin').classList.contains('active')
+      && sessionStorage.getItem(ADMIN_TAB_KEY) === 'events') {
+      const content = $('#adminContent');
+      content.innerHTML = adminEvents();
+      bindAdminEvents();
+    }
+    if ($('#page-events').classList.contains('active')) renderEvents();
+  } catch (error) {
+    toast(`Event participation could not be loaded: ${firebaseErrorMessage(error)}`, 'error');
   }
 }
 
@@ -359,12 +621,17 @@ function renderHome() {
   `).join('');
   const latest = state.notices.slice().sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 3);
   $('#homeNotices').innerHTML = latest.length ? latest.map(n => `
-    <button class="home-notice" data-page="notices">
-      <span class="badge badge-${escapeAttr(n.category)}">${escapeHtml(n.category)}</span>
-      <span class="home-notice-title">${escapeHtml(n.title)}</span>
+  <button class="home-notice notice-card-${escapeAttr(n.category)}" data-notice-id="${escapeAttr(n.id)}" aria-label="Read notice: ${escapeAttr(n.title)}">
+    <span class="home-notice-image" aria-hidden="true">${n.image ? `<img class="notice-card-photo" src="${escapeAttr(n.image)}" alt="" loading="lazy">` : ''}</span>
+    <span class="home-notice-content">
+      <span class="home-notice-heading">
+        <span class="home-notice-title">${escapeHtml(n.title)}</span>
+        <span class="home-notice-category">${escapeHtml(n.category)}</span>
+      </span>
       <span class="home-notice-date muted small">${lineIcon('calendar', 'notice-date-icon')}${fmtDate(n.date)}</span>
-      <span class="home-notice-arrow">${lineIcon('arrow')}</span>
-    </button>
+      <span class="home-notice-arrow" aria-hidden="true">${lineIcon('arrowUpRight')}</span>
+    </span>
+  </button>
   `).join('') : '<p class="muted small">No notices posted yet.</p>';
 }
 
@@ -389,17 +656,71 @@ function renderNotices() {
   }
 
   list.innerHTML = items.map(n => `
-    <article class="card">
-      <div class="card-head">
-        <h3 class="card-title">${escapeHtml(n.title)}</h3>
-        <span class="badge badge-${n.category}">${n.category}</span>
+    <article class="notice-card notice-card-${escapeAttr(n.category)}" data-notice-id="${escapeAttr(n.id)}" role="button" tabindex="0" aria-label="Read notice: ${escapeAttr(n.title)}">
+      <div class="notice-card-image" aria-hidden="true">
+        ${n.image ? `<img class="notice-card-photo" src="${escapeAttr(n.image)}" alt="" loading="lazy">` : ''}
+        <span class="notice-image-category">${escapeHtml(n.category)}</span>
       </div>
-      <div class="card-meta">
-        <span>${lineIcon('calendar')} ${fmtDate(n.date)}</span>
+      <div class="notice-card-content">
+        <div class="notice-card-heading">
+          <h3 class="notice-card-title">${escapeHtml(n.title)}</h3>
+        </div>
+        <div class="notice-card-date">${lineIcon('calendar')}<time>${fmtDate(n.date)}</time></div>
+        <p class="notice-card-body">${escapeHtml(n.body)}</p>
+        <span class="notice-card-arrow" aria-hidden="true">${lineIcon('arrowUpRight')}</span>
       </div>
-      <p class="card-body">${escapeHtml(n.body)}</p>
     </article>
   `).join('');
+}
+
+function renderNoticeDetail(notice) {
+  const detail = $('#noticeDetail');
+  detail.dataset.noticeId = notice.id;
+  $('#noticeDetailContent').innerHTML = `
+    <header class="notice-detail-toolbar">
+      <button class="notice-detail-back" type="button" data-close-notice-detail>
+        <span aria-hidden="true">←</span> Back to notices
+      </button>
+      <span class="notice-detail-context">Campus notice</span>
+    </header>
+    <article class="notice-detail-article notice-card-${escapeAttr(notice.category)}">
+      <div class="notice-detail-cover notice-card-image" aria-hidden="true">
+        ${notice.image ? `<img class="notice-card-photo" src="${escapeAttr(notice.image)}" alt="">` : ''}
+        <span class="notice-image-category">${escapeHtml(notice.category)}</span>
+      </div>
+      <div class="notice-detail-content">
+        <h1 id="noticeDetailTitle">${escapeHtml(notice.title)}</h1>
+        <div class="notice-card-date">${lineIcon('calendar')}<time>${fmtDate(notice.date)}</time></div>
+        <p class="notice-detail-body">${escapeHtml(notice.body)}</p>
+      </div>
+    </article>
+  `;
+}
+
+function openNoticeDetail(noticeId, trigger) {
+  const notice = state.notices.find(item => item.id === noticeId);
+  if (!notice) {
+    toast('This notice is no longer available.', 'error');
+    return;
+  }
+
+  noticeDetailReturnFocus = trigger;
+  noticeDetailPreviousOverflow = document.body.style.overflow;
+  renderNoticeDetail(notice);
+  $('#noticeDetail').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+  $('[data-close-notice-detail]', $('#noticeDetail')).focus();
+}
+
+function closeNoticeDetail() {
+  const detail = $('#noticeDetail');
+  if (detail.classList.contains('hidden')) return;
+  detail.classList.add('hidden');
+  detail.removeAttribute('data-notice-id');
+  $('#noticeDetailContent').innerHTML = '';
+  document.body.style.overflow = noticeDetailPreviousOverflow;
+  if (noticeDetailReturnFocus?.isConnected) noticeDetailReturnFocus.focus();
+  noticeDetailReturnFocus = null;
 }
 
 /* ---------- COMPLAINTS ---------- */
@@ -522,6 +843,7 @@ function initAuth() {
     if (verificationUnsubscribe) verificationUnsubscribe();
     verificationUnsubscribe = null;
     stopSupportListeners();
+    stopParticipationSubscriptions();
     if (!user) {
       currentUser = null;
       isAdminUser = false;
@@ -552,6 +874,7 @@ function initAuth() {
       isAdminUser = adminProfile.data()?.role === 'admin';
       if (isAdminUser) {
         studentVerification = { status: 'approved' };
+        if (portalContentLoaded && !portalContentExists) queuePublicContentWrite();
       } else {
         const verificationRecord = await getDoc(doc(db, 'studentVerifications', user.uid));
         if (auth.currentUser?.uid !== user.uid) return;
@@ -561,6 +884,7 @@ function initAuth() {
           snapshot => {
             if (auth.currentUser?.uid !== user.uid) return;
             studentVerification = snapshot.exists() ? snapshot.data() : null;
+            watchStudentParticipation();
             updateAuthUi();
             renderAuthPage();
             if ($('#page-complaints').classList.contains('active')) renderComplaintsPage();
@@ -584,6 +908,7 @@ function initAuth() {
         : `Account verification could not be checked: ${firebaseErrorMessage(error)}`;
     }
     if (auth.currentUser?.uid !== user.uid) return;
+    watchStudentParticipation();
     updateAuthUi();
     renderAuthPage();
     if ($('#page-complaints').classList.contains('active')) renderComplaintsPage();
@@ -896,10 +1221,11 @@ function renderEvents() {
   }
 
   list.innerHTML = upcoming.sort((a, b) => a.date.localeCompare(b.date)).map(ev => {
-    const registered = state.eventRegs.includes(ev.id);
-    const count = ev.registrations.length;
+    const registered = !isAdminUser && state.eventRegs.includes(ev.id);
+    const count = ev.registrationCount ?? ev.registrations.length;
     return `
       <article class="card">
+        ${ev.image ? `<img class="event-card-image" src="${escapeAttr(ev.image)}" alt="${escapeAttr(ev.title)}" loading="lazy">` : ''}
         <div class="card-head">
           <h3 class="card-title">${escapeHtml(ev.title)}</h3>
           <span class="badge badge-event">Event</span>
@@ -912,7 +1238,7 @@ function renderEvents() {
         <p class="card-body">${escapeHtml(ev.description || '')}</p>
         <div class="card-actions">
         <button class="btn btn-outline" data-calendar="${ev.id}">${lineIcon('calendarPlus')} Add calendar reminder</button>
-        ${hasCampusAccess()
+        ${hasCampusAccess() && !isAdminUser
           ? `<button class="btn ${registered ? 'btn-outline' : 'btn-primary'}" data-register="${escapeAttr(ev.id)}" ${registered ? 'disabled' : ''}>${registered ? `${lineIcon('check')} Registered` : 'Register'}</button>`
           : '<button class="btn btn-primary" data-page="login">Sign in to register</button>'}
         </div>
@@ -927,27 +1253,19 @@ function renderEventFeedback(event) {
   const responses = Array.isArray(poll.responses) ? poll.responses : [];
   const ownResponse = responses.find(response => response.userId === currentUser?.uid);
   const question = poll.question || `Should we organize ${event.title}?`;
-  if (!hasCampusAccess()) {
+  if (!hasCampusAccess() && !isAdminUser) {
     return `<section class="event-feedback event-feedback-locked">
       <p class="eyebrow">CAMPUS STUDENT FEEDBACK</p>
       <p class="muted small">Sign in with a verified email and admin-approved student ID to share your view.</p>
       <button class="text-link" type="button" data-page="login">Sign in or verify your student ID →</button>
     </section>`;
   }
+  if (isAdminUser) return renderEventFeedbackResults(responses, question);
   if (ownResponse) {
-    const results = EVENT_FEEDBACK_CHOICES.map(choice => {
-      const votes = responses.filter(response => response.choice === choice).length;
-      const percent = responses.length ? Math.round(votes / responses.length * 100) : 0;
-      return `<div class="feedback-result">
-        <div class="between"><span>${choice}</span><span class="muted small">${votes} · ${percent}%</span></div>
-        <div class="bar"><div class="bar-fill" style="width:${percent}%"></div></div>
-      </div>`;
-    }).join('');
     return `<section class="event-feedback" aria-label="Event feedback results">
       <p class="eyebrow">STUDENT FEEDBACK</p>
       <h4>${escapeHtml(question)}</h4>
-      <p class="muted small">Thanks for sharing your view. ${responses.length} student${responses.length === 1 ? '' : 's'} responded.</p>
-      ${results}
+      <p class="muted small">Thanks for sharing your view. ${poll.feedbackCount || 0} student${poll.feedbackCount === 1 ? '' : 's'} responded.</p>
     </section>`;
   }
 
@@ -970,6 +1288,23 @@ function renderEventFeedback(event) {
     </label>
     <button class="btn btn-outline btn-sm" type="submit">Send feedback</button>
   </form>`;
+}
+
+function renderEventFeedbackResults(responses, question) {
+  const results = EVENT_FEEDBACK_CHOICES.map(choice => {
+    const votes = responses.filter(response => response.choice === choice).length;
+    const percent = responses.length ? Math.round(votes / responses.length * 100) : 0;
+    return `<div class="feedback-result">
+      <div class="between"><span>${choice}</span><span class="muted small">${votes} · ${percent}%</span></div>
+      <div class="bar"><div class="bar-fill" style="width:${percent}%"></div></div>
+    </div>`;
+  }).join('');
+  return `<section class="event-feedback" aria-label="Event feedback results">
+    <p class="eyebrow">STUDENT FEEDBACK</p>
+    <h4>${escapeHtml(question)}</h4>
+    <p class="muted small">${responses.length} student${responses.length === 1 ? '' : 's'} responded.</p>
+    ${results}
+  </section>`;
 }
 
 /* ---------- OPPORTUNITIES ---------- */
@@ -1000,8 +1335,9 @@ function renderOpportunities() {
 
 /* ---------- LOST & FOUND ---------- */
 function renderLostFound() {
-  $('#lostFoundForm').classList.toggle('hidden', !hasCampusAccess());
-  $('#lostFoundAccessNotice')?.classList.toggle('hidden', hasCampusAccess());
+  const canPost = hasCampusAccess() && !isAdminUser;
+  $('#lostFoundForm').classList.toggle('hidden', !canPost);
+  $('#lostFoundAccessNotice')?.classList.toggle('hidden', canPost);
   const list = $('#lostFoundList');
   const items = state.lostfound
     .filter(i => i.approved !== false)
@@ -1046,7 +1382,7 @@ function renderGallery() {
 
 function adminGallery() {
   return `
-    <div class="grid grid-2">
+    <div class="grid grid-2 admin-gallery-layout">
       <form id="adminGalleryForm" class="card form">
         <h3>Add a gallery photo</h3>
         <div class="field">
@@ -1062,7 +1398,7 @@ function adminGallery() {
       </form>
       <div class="card">
         <h3>Gallery photos (${state.gallery.length})</h3>
-        <div class="grid gallery-grid">
+        <div class="grid gallery-grid admin-gallery-grid">
           ${state.gallery.map(item => `
             <figure class="gallery-item">
               <img src="${escapeAttr(item.image)}" alt="${escapeAttr(item.caption)}" loading="lazy">
@@ -1076,18 +1412,6 @@ function adminGallery() {
       </div>
     </div>
   `;
-}
-
-function readImageAsDataUrl(file) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      if (typeof reader.result === 'string') resolve(reader.result);
-      else reject(new Error('The selected image could not be read.'));
-    };
-    reader.onerror = () => reject(new Error('The selected image could not be read.'));
-    reader.readAsDataURL(file);
-  });
 }
 
 function bindAdminGallery() {
@@ -1109,23 +1433,48 @@ function bindAdminGallery() {
       return;
     }
 
+    if (!storage) {
+      toast('Firebase Storage is not configured for gallery uploads.', 'error');
+      return;
+    }
+
     const submit = $('#adminGalleryForm button[type="submit"]');
+    const id = uid('g');
+    const extension = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+      'image/gif': 'gif',
+    }[file.type];
+    const storagePath = `gallery/${id}.${extension}`;
     submit.disabled = true;
+    let contentSaved = false;
     try {
+      await uploadBytes(ref(storage, storagePath), file, { contentType: file.type });
+      const image = await getDownloadURL(ref(storage, storagePath));
       const item = {
-        id: uid('g'),
+        id,
         caption: $('#agCaption').value.trim(),
-        image: await readImageAsDataUrl(file),
+        image,
+        storagePath,
       };
       state.gallery.unshift(item);
-      if (!saveState()) {
-        state.gallery.shift();
-        return;
-      }
+      cacheStateLocally();
+      await persistPublicContentNow();
+      contentSaved = true;
       renderAdminTab('gallery');
       renderGallery();
       toast('Photo added to the gallery', 'success');
     } catch (error) {
+      if (!contentSaved) {
+        state.gallery = state.gallery.filter(item => item.id !== id);
+        cacheStateLocally();
+        try {
+          await deleteObject(ref(storage, storagePath));
+        } catch (cleanupError) {
+          toast(`Failed upload cleanup: ${firebaseErrorMessage(cleanupError)}`, 'error');
+        }
+      }
       toast(error instanceof Error ? error.message : 'The image could not be added.', 'error');
     } finally {
       submit.disabled = false;
@@ -1133,15 +1482,28 @@ function bindAdminGallery() {
   });
 
   $$('button[data-delete-gallery]').forEach(button => {
-    button.addEventListener('click', () => {
+    button.addEventListener('click', async () => {
       if (!requireAdminAction()) return;
       const id = button.dataset.deleteGallery;
       const index = state.gallery.findIndex(item => item.id === id);
       if (index < 0) return;
       const [removed] = state.gallery.splice(index, 1);
-      if (!saveState()) {
+      button.disabled = true;
+      cacheStateLocally();
+      try {
+        await persistPublicContentNow();
+      } catch {
         state.gallery.splice(index, 0, removed);
+        cacheStateLocally();
+        button.disabled = false;
         return;
+      }
+      if (storage && removed.storagePath) {
+        try {
+          await deleteObject(ref(storage, removed.storagePath));
+        } catch (error) {
+          toast(`Gallery image could not be removed from storage: ${firebaseErrorMessage(error)}`, 'error');
+        }
       }
       renderAdminTab('gallery');
       renderGallery();
@@ -1264,8 +1626,22 @@ function renderAdminTab(tab) {
   if (tab === 'complaints')  { c.innerHTML = adminComplaints(); bindAdminComplaints(); watchSupportRequests(true); }
   if (tab === 'verifications') { c.innerHTML = adminVerifications(); loadVerificationRequests(c); }
   if (tab === 'notices')     { c.innerHTML = adminNotices();    bindAdminNotices(); }
-  if (tab === 'events')      { c.innerHTML = adminEvents();     bindAdminEvents(); }
-  if (tab === 'lostfound')   { c.innerHTML = adminLostFound();  bindAdminLostFound(); }
+  if (tab === 'events') {
+    c.innerHTML = adminEvents();
+    bindAdminEvents();
+    loadAdminEventParticipation();
+  }
+  if (tab === 'lostfound') {
+    c.innerHTML = adminLostFound();
+    bindAdminLostFound();
+    loadAdminLostFound().then(() => {
+      if (!isAdminUser || !$('#page-admin').classList.contains('active')
+        || sessionStorage.getItem(ADMIN_TAB_KEY) !== 'lostfound') return;
+      const content = $('#adminContent');
+      content.innerHTML = adminLostFound();
+      bindAdminLostFound();
+    });
+  }
   if (tab === 'gallery')     { c.innerHTML = adminGallery(); bindAdminGallery(); }
 }
 
@@ -1470,6 +1846,69 @@ function bindAdminComplaints() {
   });
 }
 
+const PORTAL_IMAGE_TYPES = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+  'image/gif': 'gif',
+};
+const PORTAL_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+
+function validatePortalImage(file) {
+  if (!file) return true;
+  if (!PORTAL_IMAGE_TYPES[file.type]) {
+    toast('Choose a JPEG, PNG, WebP, or GIF image.', 'error');
+    return false;
+  }
+  if (file.size > PORTAL_IMAGE_MAX_BYTES) {
+    toast('Images must be 5 MB or smaller.', 'error');
+    return false;
+  }
+  if (!storage) {
+    toast('Firebase Storage is not configured for image uploads.', 'error');
+    return false;
+  }
+  return true;
+}
+
+async function uploadPortalImage(collectionName, itemId, file) {
+  const extension = PORTAL_IMAGE_TYPES[file.type];
+  const path = `${collectionName}/${itemId}/image-${uid('upload')}.${extension}`;
+  await uploadBytes(ref(storage, path), file, { contentType: file.type });
+  return { path, url: await getDownloadURL(ref(storage, path)) };
+}
+
+async function removePortalImage(path, description) {
+  if (!path || !storage) return;
+  try {
+    await deleteObject(ref(storage, path));
+  } catch (error) {
+    toast(`${description} was removed, but its image could not be deleted: ${firebaseErrorMessage(error)}`, 'error');
+  }
+}
+
+function bindPortalImagePreview(input, preview) {
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    if (!validatePortalImage(file)) {
+      input.value = '';
+      return;
+    }
+    const reader = new FileReader();
+    reader.addEventListener('load', () => {
+      if (typeof reader.result !== 'string') return;
+      preview.src = reader.result;
+      preview.classList.remove('hidden');
+    });
+    reader.addEventListener('error', () => {
+      toast('The selected image could not be previewed.', 'error');
+      input.value = '';
+    }, { once: true });
+    reader.readAsDataURL(file);
+  });
+}
+
 function adminNotices() {
   return `
     <div class="grid grid-2">
@@ -1491,6 +1930,12 @@ function adminNotices() {
         <div class="field">
           <label for="anBody">Body</label>
           <textarea id="anBody" rows="4" required placeholder="Notice details..."></textarea>
+        </div>
+        <div class="field">
+          <label for="anImage">Image <span class="muted">(optional)</span></label>
+          <input id="anImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+          <span class="muted small">JPEG, PNG, WebP, or GIF; up to 5 MB.</span>
+          <img id="anImagePreview" class="admin-image-preview hidden" alt="Selected notice image preview">
         </div>
         <button class="btn btn-primary" type="submit">Publish notice</button>
       </form>
@@ -1515,28 +1960,63 @@ function adminNotices() {
 }
 
 function bindAdminNotices() {
-  $('#adminNoticeForm').addEventListener('submit', e => {
+  bindPortalImagePreview($('#anImage'), $('#anImagePreview'));
+  $('#adminNoticeForm').addEventListener('submit', async e => {
     e.preventDefault();
     if (!requireAdminAction()) return;
-    state.notices.push({
+    const form = e.currentTarget;
+    const submit = form.querySelector('button[type="submit"]');
+    const file = $('#anImage').files?.[0];
+    if (!validatePortalImage(file)) return;
+    const notice = {
       id: uid('n'),
       title: $('#anTitle').value.trim(),
       body: $('#anBody').value.trim(),
       category: $('#anCategory').value,
       date: nowISO(),
-    });
-    saveState();
-    toast('Notice published', 'success');
-    renderAdminTab('notices');
+    };
+    let uploadedImage = null;
+    submit.disabled = true;
+    try {
+      if (file) {
+        uploadedImage = await uploadPortalImage('notices', notice.id, file);
+        notice.image = uploadedImage.url;
+        notice.imagePath = uploadedImage.path;
+      }
+      state.notices.push(notice);
+      cacheStateLocally();
+      await persistPublicContentNow();
+      toast('Notice published', 'success');
+      renderAdminTab('notices');
+    } catch (error) {
+      state.notices = state.notices.filter(item => item.id !== notice.id);
+      cacheStateLocally();
+      if (uploadedImage) await removePortalImage(uploadedImage.path, 'Notice');
+      toast(`Notice could not be published: ${firebaseErrorMessage(error)}`, 'error');
+    } finally {
+      submit.disabled = false;
+    }
   });
   $$('button[data-del-notice]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       if (!requireAdminAction()) return;
       if (!confirm('Delete this notice?')) return;
-      state.notices = state.notices.filter(n => n.id !== btn.dataset.delNotice);
-      saveState();
-      renderAdminTab('notices');
-      toast('Notice deleted', 'success');
+      const index = state.notices.findIndex(notice => notice.id === btn.dataset.delNotice);
+      const [notice] = state.notices.splice(index, 1);
+      if (!notice) return;
+      btn.disabled = true;
+      cacheStateLocally();
+      try {
+        await persistPublicContentNow();
+        await removePortalImage(notice.imagePath, 'Notice');
+        renderAdminTab('notices');
+        toast('Notice deleted', 'success');
+      } catch (error) {
+        state.notices.splice(index, 0, notice);
+        cacheStateLocally();
+        toast(`Notice could not be deleted: ${firebaseErrorMessage(error)}`, 'error');
+        btn.disabled = false;
+      }
     });
   });
   $$('button[data-edit-notice]').forEach(btn => {
@@ -1556,20 +2036,48 @@ function openNoticeEditor(id) {
         <select id="editNoticeCategory">${['exam','event','scholarship','general'].map(c => `<option value="${c}" ${notice.category === c ? 'selected' : ''}>${c}</option>`).join('')}</select>
       </div>
       <div class="field"><label for="editNoticeBody">Details</label><textarea id="editNoticeBody" required rows="5">${escapeHtml(notice.body)}</textarea></div>
+      <div class="field">
+        <label for="editNoticeImage">Image <span class="muted">(optional)</span></label>
+        <input id="editNoticeImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+        <span class="muted small">JPEG, PNG, WebP, or GIF; up to 5 MB.</span>
+        <img id="editNoticeImagePreview" class="admin-image-preview ${notice.image ? '' : 'hidden'}" src="${escapeAttr(notice.image || '')}" alt="Notice image preview">
+      </div>
       <div class="card-actions"><button class="btn btn-primary" type="submit">Save changes</button><button class="btn btn-outline" type="button" data-close-modal>Cancel</button></div>
     </form>
   `);
-  $('#editNoticeForm').addEventListener('submit', e => {
+  bindPortalImagePreview($('#editNoticeImage'), $('#editNoticeImagePreview'));
+  $('#editNoticeForm').addEventListener('submit', async e => {
     e.preventDefault();
     if (!requireAdminAction()) return;
-    notice.title = $('#editNoticeTitle').value.trim();
-    notice.category = $('#editNoticeCategory').value;
-    notice.body = $('#editNoticeBody').value.trim();
-    notice.date = nowISO();
-    saveState();
-    closeModal();
-    renderAdminTab('notices');
-    toast('Notice updated', 'success');
+    const file = $('#editNoticeImage').files?.[0];
+    if (!validatePortalImage(file)) return;
+    const submit = e.currentTarget.querySelector('button[type="submit"]');
+    const original = { ...notice };
+    let uploadedImage = null;
+    submit.disabled = true;
+    try {
+      if (file) uploadedImage = await uploadPortalImage('notices', notice.id, file);
+      notice.title = $('#editNoticeTitle').value.trim();
+      notice.category = $('#editNoticeCategory').value;
+      notice.body = $('#editNoticeBody').value.trim();
+      notice.date = nowISO();
+      if (uploadedImage) {
+        notice.image = uploadedImage.url;
+        notice.imagePath = uploadedImage.path;
+      }
+      cacheStateLocally();
+      await persistPublicContentNow();
+      if (uploadedImage && original.imagePath) await removePortalImage(original.imagePath, 'Previous notice image');
+      closeModal();
+      renderAdminTab('notices');
+      toast('Notice updated', 'success');
+    } catch (error) {
+      Object.assign(notice, original);
+      cacheStateLocally();
+      if (uploadedImage) await removePortalImage(uploadedImage.path, 'Notice');
+      toast(`Notice could not be updated: ${firebaseErrorMessage(error)}`, 'error');
+      submit.disabled = false;
+    }
   });
 }
 
@@ -1599,6 +2107,12 @@ function adminEvents() {
         <div class="field">
           <label for="aeDescription">Description</label>
           <textarea id="aeDescription" rows="3" placeholder="What is the event about?"></textarea>
+        </div>
+        <div class="field">
+          <label for="aeImage">Image <span class="muted">(optional)</span></label>
+          <input id="aeImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+          <span class="muted small">JPEG, PNG, WebP, or GIF; up to 5 MB.</span>
+          <img id="aeImagePreview" class="admin-image-preview hidden" alt="Selected event image preview">
         </div>
         <div class="field checkbox">
           <input id="aeFeedback" type="checkbox" checked>
@@ -1633,10 +2147,15 @@ function adminEvents() {
 }
 
 function bindAdminEvents() {
-  $('#adminEventForm').addEventListener('submit', e => {
+  bindPortalImagePreview($('#aeImage'), $('#aeImagePreview'));
+  $('#adminEventForm').addEventListener('submit', async e => {
     e.preventDefault();
     if (!requireAdminAction()) return;
-    state.events.push({
+    const form = e.currentTarget;
+    const submit = form.querySelector('button[type="submit"]');
+    const file = $('#aeImage').files?.[0];
+    if (!validatePortalImage(file)) return;
+    const event = {
       id: uid('e'),
       title: $('#aeTitle').value.trim(),
       date: $('#aeDate').value,
@@ -1648,22 +2167,58 @@ function bindAdminEvents() {
         enabled: $('#aeFeedback').checked,
         responses: [],
       },
-    });
-    saveState();
-    toast('Event added', 'success');
-    renderAdminTab('events');
+    };
+    let uploadedImage = null;
+    submit.disabled = true;
+    try {
+      if (file) {
+        uploadedImage = await uploadPortalImage('events', event.id, file);
+        event.image = uploadedImage.url;
+        event.imagePath = uploadedImage.path;
+      }
+      state.events.push(event);
+      cacheStateLocally();
+      await persistPublicContentNow();
+      toast('Event added', 'success');
+      renderAdminTab('events');
+    } catch (error) {
+      state.events = state.events.filter(item => item.id !== event.id);
+      cacheStateLocally();
+      if (uploadedImage) await removePortalImage(uploadedImage.path, 'Event');
+      toast(`Event could not be added: ${firebaseErrorMessage(error)}`, 'error');
+    } finally {
+      submit.disabled = false;
+    }
   });
 
   $$('button[data-del-event]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       if (!requireAdminAction()) return;
       if (!confirm('Delete this event?')) return;
       const id = btn.dataset.delEvent;
-      state.events = state.events.filter(x => x.id !== id);
-      state.eventRegs = state.eventRegs.filter(x => x !== id);
-      saveState();
-      renderAdminTab('events');
-      toast('Event deleted', 'success');
+      btn.disabled = true;
+      try {
+        const [registrations, feedback] = await Promise.all([
+          getDocs(collection(db, 'events', id, 'registrations')),
+          getDocs(collection(db, 'events', id, 'feedback')),
+        ]);
+        await Promise.all([
+          ...registrations.docs.map(item => deleteDoc(item.ref)),
+          ...feedback.docs.map(item => deleteDoc(item.ref)),
+        ]);
+        const event = state.events.find(item => item.id === id);
+        state.events = state.events.filter(event => event.id !== id);
+        state.eventRegs = state.eventRegs.filter(eventId => eventId !== id);
+        stopParticipationSubscriptions();
+        cacheStateLocally();
+        await persistPublicContentNow();
+        await removePortalImage(event?.imagePath, 'Event');
+        renderAdminTab('events');
+        toast('Event and its private participation data deleted.', 'success');
+      } catch (error) {
+        toast(`Event could not be deleted: ${firebaseErrorMessage(error)}`, 'error');
+        btn.disabled = false;
+      }
     });
   });
 
@@ -1696,27 +2251,55 @@ function openEventEditor(id) {
       </div>
       <div class="field"><label for="editEventLocation">Location</label><input id="editEventLocation" value="${escapeAttr(event.location || '')}"></div>
       <div class="field"><label for="editEventDescription">Description</label><textarea id="editEventDescription" rows="4">${escapeHtml(event.description || '')}</textarea></div>
+      <div class="field">
+        <label for="editEventImage">Image <span class="muted">(optional)</span></label>
+        <input id="editEventImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+        <span class="muted small">JPEG, PNG, WebP, or GIF; up to 5 MB.</span>
+        <img id="editEventImagePreview" class="admin-image-preview ${event.image ? '' : 'hidden'}" src="${escapeAttr(event.image || '')}" alt="Event image preview">
+      </div>
       <div class="field checkbox"><input id="editEventFeedback" type="checkbox" ${event.feedbackPoll?.enabled ? 'checked' : ''}><label for="editEventFeedback">Collect verified campus student feedback for this event</label></div>
       <div class="card-actions"><button class="btn btn-primary" type="submit">Save changes</button><button class="btn btn-outline" type="button" data-close-modal>Cancel</button></div>
     </form>
   `);
-  $('#editEventForm').addEventListener('submit', e => {
+  bindPortalImagePreview($('#editEventImage'), $('#editEventImagePreview'));
+  $('#editEventForm').addEventListener('submit', async e => {
     e.preventDefault();
     if (!requireAdminAction()) return;
-    event.title = $('#editEventTitle').value.trim();
-    event.date = $('#editEventDate').value;
-    event.time = $('#editEventTime').value.trim();
-    event.location = $('#editEventLocation').value.trim();
-    event.description = $('#editEventDescription').value.trim();
-    event.feedbackPoll = {
-      enabled: $('#editEventFeedback').checked,
-      question: event.feedbackPoll?.question || '',
-      responses: event.feedbackPoll?.responses || [],
-    };
-    saveState();
-    closeModal();
-    renderAdminTab('events');
-    toast('Event updated', 'success');
+    const file = $('#editEventImage').files?.[0];
+    if (!validatePortalImage(file)) return;
+    const submit = e.currentTarget.querySelector('button[type="submit"]');
+    const original = { ...event };
+    let uploadedImage = null;
+    submit.disabled = true;
+    try {
+      if (file) uploadedImage = await uploadPortalImage('events', event.id, file);
+      event.title = $('#editEventTitle').value.trim();
+      event.date = $('#editEventDate').value;
+      event.time = $('#editEventTime').value.trim();
+      event.location = $('#editEventLocation').value.trim();
+      event.description = $('#editEventDescription').value.trim();
+      event.feedbackPoll = {
+        enabled: $('#editEventFeedback').checked,
+        question: event.feedbackPoll?.question || '',
+        responses: event.feedbackPoll?.responses || [],
+      };
+      if (uploadedImage) {
+        event.image = uploadedImage.url;
+        event.imagePath = uploadedImage.path;
+      }
+      cacheStateLocally();
+      await persistPublicContentNow();
+      if (uploadedImage && original.imagePath) await removePortalImage(original.imagePath, 'Previous event image');
+      closeModal();
+      renderAdminTab('events');
+      toast('Event updated', 'success');
+    } catch (error) {
+      Object.assign(event, original);
+      cacheStateLocally();
+      if (uploadedImage) await removePortalImage(uploadedImage.path, 'Event');
+      toast(`Event could not be updated: ${firebaseErrorMessage(error)}`, 'error');
+      submit.disabled = false;
+    }
   });
 }
 
@@ -1900,23 +2483,63 @@ function adminLostFound() {
 }
 
 function bindAdminLostFound() {
-  $$('button[data-approve]').forEach(b => b.addEventListener('click', () => {
+  $$('button[data-approve]').forEach(b => b.addEventListener('click', async () => {
     if (!requireAdminAction()) return;
-    const i = state.lostfound.find(x => x.id === b.dataset.approve);
-    if (i) { i.approved = true; saveState(); renderAdminTab('lostfound'); toast('Approved', 'success'); }
+    const item = state.lostfound.find(post => post.id === b.dataset.approve);
+    if (!item) return;
+    b.disabled = true;
+    try {
+      await updateDoc(doc(db, 'lostFoundPosts', item.id), { approved: true });
+      item.approved = true;
+      cacheStateLocally();
+      renderAdminTab('lostfound');
+      toast('Approved', 'success');
+    } catch (error) {
+      toast(`Post could not be approved: ${firebaseErrorMessage(error)}`, 'error');
+      b.disabled = false;
+    }
   }));
-  $$('button[data-unapprove]').forEach(b => b.addEventListener('click', () => {
+  $$('button[data-unapprove]').forEach(b => b.addEventListener('click', async () => {
     if (!requireAdminAction()) return;
-    const i = state.lostfound.find(x => x.id === b.dataset.unapprove);
-    if (i) { i.approved = false; saveState(); renderAdminTab('lostfound'); toast('Hidden from public'); }
+    const item = state.lostfound.find(post => post.id === b.dataset.unapprove);
+    if (!item) return;
+    b.disabled = true;
+    try {
+      await updateDoc(doc(db, 'lostFoundPosts', item.id), { approved: false });
+      item.approved = false;
+      cacheStateLocally();
+      renderAdminTab('lostfound');
+      toast('Hidden from public', 'success');
+    } catch (error) {
+      toast(`Post could not be hidden: ${firebaseErrorMessage(error)}`, 'error');
+      b.disabled = false;
+    }
   }));
-  $$('button[data-del-lf]').forEach(b => b.addEventListener('click', () => {
+  $$('button[data-del-lf]').forEach(b => b.addEventListener('click', async () => {
     if (!requireAdminAction()) return;
     if (!confirm('Delete this post?')) return;
-    state.lostfound = state.lostfound.filter(x => x.id !== b.dataset.delLf);
-    saveState();
-    renderAdminTab('lostfound');
-    toast('Deleted', 'success');
+    const item = state.lostfound.find(post => post.id === b.dataset.delLf);
+    if (!item) return;
+    b.disabled = true;
+    try {
+      await deleteDoc(doc(db, 'lostFoundPosts', item.id));
+      state.lostfound = state.lostfound.filter(post => post.id !== item.id);
+      let photoCleanupFailed = false;
+      if (storage && item.photoPath) {
+        try {
+          await deleteObject(ref(storage, item.photoPath));
+        } catch (error) {
+          photoCleanupFailed = true;
+          toast(`Post deleted, but its image could not be removed: ${firebaseErrorMessage(error)}`, 'error');
+        }
+      }
+      cacheStateLocally();
+      renderAdminTab('lostfound');
+      if (!photoCleanupFailed) toast('Deleted', 'success');
+    } catch (error) {
+      toast(`Post could not be deleted: ${firebaseErrorMessage(error)}`, 'error');
+      b.disabled = false;
+    }
   }));
 }
 
@@ -1946,7 +2569,7 @@ function openEventRegisterModal(eventId) {
     <form id="eventRegForm" class="form">
       <div class="field">
         <label for="erName">Full name *</label>
-        <input id="erName" type="text" required placeholder="Your full name">
+        <input id="erName" type="text" maxlength="100" required placeholder="Your full name">
       </div>
       <div class="field">
         <label for="erEmail">Account email</label>
@@ -1958,11 +2581,11 @@ function openEventRegisterModal(eventId) {
       </div>
       <div class="field">
         <label for="erDept">Department / Semester *</label>
-        <input id="erDept" type="text" required placeholder="e.g. BCA, 4th semester">
+        <input id="erDept" type="text" maxlength="100" required placeholder="e.g. BCA, 4th semester">
       </div>
       <div class="field">
         <label for="erNotes">Anything we should know? (optional)</label>
-        <textarea id="erNotes" rows="2" placeholder="Dietary needs, accessibility, etc."></textarea>
+        <textarea id="erNotes" rows="2" maxlength="1000" placeholder="Dietary needs, accessibility, etc."></textarea>
       </div>
 
       <div class="card-actions" style="margin-top:.4rem">
@@ -1980,9 +2603,9 @@ function openEventRegisterModal(eventId) {
   setTimeout(() => $('#erName')?.focus(), 50);
 }
 
-function handleEventRegisterSubmit(e, eventId) {
+async function handleEventRegisterSubmit(e, eventId) {
   e.preventDefault();
-  if (!hasCampusAccess()) {
+  if (!hasCampusAccess() || isAdminUser) {
     toast('Your student ID must be approved before you can register.', 'error');
     navigate('login');
     return;
@@ -2021,11 +2644,29 @@ function handleEventRegisterSubmit(e, eventId) {
     return;
   }
 
-  ev.registrations.push({
-    id: uid('reg'),
-    name, email, phone, dept, notes,
-    date: nowISO(),
-  });
+  const registerButton = $('#eventRegForm button[type="submit"]');
+  registerButton.disabled = true;
+  try {
+    const registrationRef = doc(db, 'events', eventId, 'registrations', currentUser.uid);
+    if ((await getDoc(registrationRef)).exists()) {
+      result.innerHTML = `<div class="alert alert-warning">This account is already registered for this event.</div>`;
+      return;
+    }
+    const registration = {
+      eventId,
+      userUid: currentUser.uid,
+      name, email, phone, dept, notes,
+      date: nowISO(),
+    };
+    await setDoc(registrationRef, registration);
+    ev.registrations = [registration];
+    ev.registrationCount = (ev.registrationCount || 0) + 1;
+  } catch (error) {
+    result.innerHTML = `<div class="alert alert-error">${escapeHtml(firebaseErrorMessage(error))}</div>`;
+    return;
+  } finally {
+    registerButton.disabled = false;
+  }
   if (!state.eventRegs.includes(eventId)) state.eventRegs.push(eventId);
   saveState();
 
@@ -2046,9 +2687,9 @@ function handleEventRegisterSubmit(e, eventId) {
   setTimeout(closeModal, 1400);
 }
 
-function handleEventFeedbackSubmit(event) {
+async function handleEventFeedbackSubmit(event) {
   event.preventDefault();
-  if (!hasCampusAccess()) {
+  if (!hasCampusAccess() || isAdminUser) {
     toast('Your student ID must be approved before you can send event feedback.', 'error');
     navigate('login');
     return;
@@ -2076,12 +2717,29 @@ function handleEventFeedbackSubmit(event) {
     toast('Suggestions must be 1,000 characters or fewer.', 'error');
     return;
   }
-  responses.push({
-    userId: currentUser.uid,
-    choice,
-    suggestion,
-    submittedAt: nowISO(),
-  });
+  const button = form.querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const responseRef = doc(db, 'events', campusEvent.id, 'feedback', currentUser.uid);
+    if ((await getDoc(responseRef)).exists()) {
+      toast('You have already shared feedback for this event.');
+      return;
+    }
+    const response = {
+      eventId: campusEvent.id,
+      userUid: currentUser.uid,
+      choice,
+      suggestion,
+      submittedAt: nowISO(),
+    };
+    await setDoc(responseRef, response);
+    responses.push({ ...response, userId: currentUser.uid });
+  } catch (error) {
+    toast(`Event feedback could not be sent: ${firebaseErrorMessage(error)}`, 'error');
+    return;
+  } finally {
+    button.disabled = false;
+  }
   saveState();
   renderEvents();
   toast('Your event feedback has been sent.', 'success');
@@ -2092,7 +2750,7 @@ function handleEventFeedbackSubmit(event) {
    ============================================================ */
 async function handleLostFoundSubmit(e) {
   e.preventDefault();
-  if (!hasCampusAccess()) {
+  if (!hasCampusAccess() || isAdminUser) {
     toast('Student ID approval is required to post to Lost & Found.', 'error');
     navigate('login');
     return;
@@ -2114,27 +2772,53 @@ async function handleLostFoundSubmit(e) {
     $('#lfPhoto').focus();
     return;
   }
+  if (file && !storage) {
+    toast('Firebase Storage is not configured for item photos.', 'error');
+    $('#lfPhoto').focus();
+    return;
+  }
 
   const submit = $('#lostFoundForm button[type="submit"]');
   submit.disabled = true;
+  let uploadedPhotoPath = '';
   try {
+    const id = uid('lf');
     const item = {
-      id: uid('lf'),
+      id,
       type: $('#lfType').value,
       title: $('#lfTitle').value.trim(),
       location: $('#lfLocation').value.trim(),
       contact,
       description: $('#lfDesc').value.trim(),
-      ...(file ? { photo: await readImageAsDataUrl(file) } : {}),
       date: nowISO(),
       approved: true,
     };
-    state.lostfound.push(item);
-    if (!saveState()) {
-      state.lostfound.pop();
-      return;
+    if (file) {
+      const extension = {
+        'image/jpeg': 'jpg',
+        'image/png': 'png',
+        'image/webp': 'webp',
+        'image/gif': 'gif',
+      }[file.type];
+      uploadedPhotoPath = `lostFound/${currentUser.uid}/${id}/photo.${extension}`;
+      await uploadBytes(ref(storage, uploadedPhotoPath), file, { contentType: file.type });
+      item.photoPath = uploadedPhotoPath;
+      item.photo = await getDownloadURL(ref(storage, uploadedPhotoPath));
     }
+    await setDoc(doc(db, 'lostFoundPosts', id), {
+      ...item,
+      ownerUid: currentUser.uid,
+    });
+    state.lostfound = [item, ...state.lostfound.filter(post => post.id !== item.id)];
+    cacheStateLocally();
   } catch (error) {
+    if (uploadedPhotoPath) {
+      try {
+        await deleteObject(ref(storage, uploadedPhotoPath));
+      } catch (cleanupError) {
+        toast(`Item photo cleanup failed: ${firebaseErrorMessage(cleanupError)}`, 'error');
+      }
+    }
     toast(error instanceof Error ? error.message : 'The item photo could not be added.', 'error');
     return;
   } finally {
@@ -2211,14 +2895,34 @@ function init() {
   }
   document.body.classList.toggle('theme-dark', storedTheme === 'dark');
   updateThemeToggle();
+  startPublicContentSync();
+  startLostFoundSync();
 
   /* ---- Navigation clicks ---- */
   document.addEventListener('click', e => {
+    const closeNotice = e.target.closest('[data-close-notice-detail]');
+    if (closeNotice) {
+      closeNoticeDetail();
+      return;
+    }
+    const notice = e.target.closest('[data-notice-id]');
+    if (notice) {
+      e.preventDefault();
+      openNoticeDetail(notice.dataset.noticeId, notice);
+      return;
+    }
     const nav = e.target.closest('[data-page]');
     if (nav) {
       e.preventDefault();
-      if (nav.matches('.announcement-link')) nav.remove();
+      if (nav.matches('.announcement-link')) $('.announcement-bar')?.remove();
       navigate(nav.dataset.page);
+    }
+  });
+  document.addEventListener('keydown', e => {
+    const notice = e.target.closest('#noticeList [data-notice-id]');
+    if (notice && (e.key === 'Enter' || e.key === ' ')) {
+      e.preventDefault();
+      openNoticeDetail(notice.dataset.noticeId, notice);
     }
   });
 
@@ -2359,6 +3063,7 @@ function init() {
   });
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') {
+      closeNoticeDetail();
       closeModal();
       $('#moreMenu').classList.add('hidden');
       $('#moreToggle').setAttribute('aria-expanded', 'false');

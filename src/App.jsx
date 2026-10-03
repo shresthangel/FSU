@@ -5,6 +5,7 @@ import portalDocument from '../portal-shell.html?raw';
 import { Button } from './components/ui/button.jsx';
 import AccountPage from './components/AccountPage.jsx';
 import HomeFeatureCards from './components/HomeFeatureCards.jsx';
+import HeroActions from './components/HeroActions.jsx';
 import NoticeFilters from './components/NoticeFilters.jsx';
 import PortalHeader from './components/PortalHeader.jsx';
 import { mountLegacyApp } from '../app.js';
@@ -12,6 +13,7 @@ import { mountLegacyApp } from '../app.js';
 const portalMarkup = portalDocument.match(/<body[^>]*>([\s\S]*?)<\/body>/i)?.[1]
   ?.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, '')
   .replace(/<header\b[\s\S]*?<\/header>/i, '<div class="react-island" data-react-island="header"></div>')
+  .replace(/<div class="hero-actions">[\s\S]*?<\/div>/i, '<div class="react-island" data-react-island="hero-actions"></div>')
   .replace(/<div class="feature-grid">[\s\S]*?<\/div>/i, '<div class="react-island" data-react-island="home-features"></div>')
   .replace(/<div class="card filter-bar">[\s\S]*?<\/div>/i, '<div class="react-island" data-react-island="notice-filters"></div>')
   .replace(/<!-- ================= ACCOUNT ================= -->[\s\S]*?(?=<!-- ================= COMPLAINTS ================= -->)/i, '<div class="react-island" data-react-island="account"></div>');
@@ -22,6 +24,7 @@ export default function App() {
 
     const islands = [
       ['header', PortalHeader],
+      ['hero-actions', HeroActions],
       ['home-features', HomeFeatureCards],
       ['notice-filters', NoticeFilters],
       ['account', AccountPage],

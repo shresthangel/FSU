@@ -11,9 +11,11 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   setDoc,
   Timestamp,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 
 const projectId = 'demo-fsu-portal';
@@ -241,4 +243,81 @@ test('email ownership must be verified before a student ID can be submitted', as
     status: 'pending',
     submittedAt: Timestamp.now(),
   }));
+});
+
+test('public portal content is readable by visitors and writable only by admins', async () => {
+  const publicDb = testEnvironment.unauthenticatedContext().firestore();
+  const studentDb = testEnvironment.authenticatedContext(studentUid, accountIdentity(studentUid)).firestore();
+  const adminDb = testEnvironment.authenticatedContext(adminUid, accountIdentity(adminUid)).firestore();
+  const contentPath = db => doc(db, 'portalContent', 'public');
+
+  await assertSucceeds(getDoc(contentPath(publicDb)));
+  await assertFails(setDoc(contentPath(studentDb), { notices: [] }));
+  await assertSucceeds(setDoc(contentPath(adminDb), { notices: [] }));
+});
+
+test('event registration and feedback are private to the student and administrators', async () => {
+  const studentDb = testEnvironment.authenticatedContext(studentUid, accountIdentity(studentUid)).firestore();
+  const otherDb = testEnvironment.authenticatedContext(otherStudentUid, accountIdentity(otherStudentUid)).firestore();
+  const adminDb = testEnvironment.authenticatedContext(adminUid, accountIdentity(adminUid)).firestore();
+  const registrationRef = doc(studentDb, 'events', 'event-one', 'registrations', studentUid);
+  const feedbackRef = doc(studentDb, 'events', 'event-one', 'feedback', studentUid);
+
+  await assertSucceeds(setDoc(registrationRef, {
+    eventId: 'event-one',
+    userUid: studentUid,
+    name: 'Verified Student',
+    email: `${studentUid}@example.com`,
+    phone: '1234567890',
+    dept: 'Computer Science',
+    notes: '',
+    date: new Date().toISOString(),
+  }));
+  await assertSucceeds(setDoc(feedbackRef, {
+    eventId: 'event-one',
+    userUid: studentUid,
+    choice: 'Yes',
+    suggestion: 'Please include accessible seating.',
+    submittedAt: new Date().toISOString(),
+  }));
+  await assertSucceeds(getDoc(registrationRef));
+  await assertFails(getDoc(doc(otherDb, 'events', 'event-one', 'registrations', studentUid)));
+  await assertFails(getDoc(doc(otherDb, 'events', 'event-one', 'feedback', studentUid)));
+  await assertSucceeds(getDocs(collection(adminDb, 'events', 'event-one', 'registrations')));
+  await assertSucceeds(getDocs(collection(adminDb, 'events', 'event-one', 'feedback')));
+});
+
+test('approved students can publish Lost & Found posts and visitors can read approved posts only', async () => {
+  const studentDb = testEnvironment.authenticatedContext(studentUid, accountIdentity(studentUid)).firestore();
+  const publicDb = testEnvironment.unauthenticatedContext().firestore();
+  const post = {
+    id: 'lost-post',
+    type: 'lost',
+    title: 'Black wallet',
+    location: 'Library',
+    contact: `${studentUid}@example.com`,
+    description: 'Lost near the entrance.',
+    date: new Date().toISOString(),
+    approved: true,
+    ownerUid: studentUid,
+  };
+
+  await assertSucceeds(setDoc(doc(studentDb, 'lostFoundPosts', post.id), post));
+  await assertFails(setDoc(doc(studentDb, 'lostFoundPosts', 'pending-post'), {
+    ...post,
+    id: 'pending-post',
+    approved: false,
+  }));
+  await testEnvironment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'lostFoundPosts', 'hidden-post'), {
+      ...post,
+      id: 'hidden-post',
+      approved: false,
+    });
+  });
+  await assertSucceeds(getDocs(query(
+    collection(publicDb, 'lostFoundPosts'),
+    where('approved', '==', true),
+  )));
+  await assertFails(getDoc(doc(publicDb, 'lostFoundPosts', 'hidden-post')));
 });

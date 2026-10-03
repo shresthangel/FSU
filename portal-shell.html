@@ -10,15 +10,10 @@
 
 <!-- ================= HEADER ================= -->
 <header class="site-header">
-  <div class="announcement-bar">
-    <span class="announcement-label">FROM YOUR STUDENTS’ UNION</span>
-    <span>Updates, events and support for campus life.</span>
-    <button class="announcement-link" data-page="notices">View notices <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-  </div>
   <div class="container header-inner">
     <a href="#" class="brand" data-page="home" aria-label="Free Students Union home">
-      <span class="brand-mark" aria-hidden="true">FSU</span>
-      <span class="brand-lockup"><strong>Free Students’ Union</strong><span>STUDENT PORTAL</span></span>
+      <span class="brand-mark" aria-hidden="true">F</span>
+      <span class="brand-lockup"><strong>free students</strong><span>UNION</span></span>
     </a>
     <button id="navToggle" class="nav-toggle" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mainNav"><svg id="navToggleIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h16"/></svg></button>
     <nav id="mainNav" class="main-nav" aria-label="Main navigation">
@@ -55,18 +50,20 @@
   <section id="page-home" class="page active">
     <div class="hero">
       <div class="hero-copy">
-        <p class="hero-pill">FREE STUDENTS’ UNION <span aria-hidden="true">/</span> CAMPUS COMMUNITY</p>
-        <h1>A better campus<br>starts with <span>us.</span></h1>
-        <p class="lead">Your union is here to keep you informed, help you speak up, and make student life better—together.</p>
-        <div class="hero-actions">
-          <button class="btn btn-primary hero-speak-up" data-page="complaints">Talk to your union <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-          <button class="hero-about" data-page="events">Explore campus life <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+        <p class="hero-pill"><span class="hero-pill-dot" aria-hidden="true"></span> YOUR UNION. YOUR CAMPUS.</p>
+        <h1>A campus where <br>every voice <span>belongs.</span></h1>
+        <p class="lead">We’re the students standing up for students. For the big changes, the little things, and everything that makes campus feel like yours.</p>
+        <div class="react-island" data-react-island="hero-actions"></div>
+        <div class="hero-trust">
+          <span class="hero-avatars" aria-hidden="true"><i>J</i><i>M</i><i>A</i><i>+</i></span>
+          <span><strong>Made by students,</strong> for all of us.</span>
         </div>
-        <p class="hero-trust">Student-led. Here for every student.</p>
       </div>
       <div class="hero-visual">
         <img class="hero-campus-photo" src="https://images.unsplash.com/photo-1523240795612-9a054b0db644?auto=format&amp;fit=crop&amp;w=1400&amp;q=85" alt="University students spending time together on campus" fetchpriority="high">
-        <p class="hero-image-caption"><span>STUDENT LIFE</span> &nbsp; A stronger campus, together.</p>
+        <span class="hero-open-badge"><i aria-hidden="true"></i> OPEN TO EVERY STUDENT</span>
+        <span class="hero-ring" aria-hidden="true"></span>
+        <div class="hero-quote"><span aria-hidden="true">“</span><p>Campus gets better<br>when we build it together.</p><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M8 17h9V8"/></svg></div>
       </div>
     </div>
 
@@ -106,6 +103,34 @@
         <button class="btn btn-primary" data-page="complaints">Open student support <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
       </section>
     </div>
+
+    <section class="home-membership">
+      <div class="home-membership-heading">
+        <p class="eyebrow">YOUR CAMPUS, YOUR VOICE</p>
+        <h2>Get started in three simple steps.</h2>
+        <p class="muted">A clear path from joining the portal to taking part in campus life.</p>
+      </div>
+      <div class="home-membership-steps">
+        <article class="home-membership-step">
+          <span>01</span>
+          <h3>Create your account</h3>
+          <p>Use an email address you can access and confirm it to get started.</p>
+          <button class="home-step-link" data-page="login">Create an account <span aria-hidden="true">→</span></button>
+        </article>
+        <article class="home-membership-step">
+          <span>02</span>
+          <h3>Confirm your campus ID</h3>
+          <p>An FSU admin checks your student ID before student-only services are unlocked.</p>
+          <button class="home-step-link" data-page="login">Learn about verification <span aria-hidden="true">→</span></button>
+        </article>
+        <article class="home-membership-step">
+          <span>03</span>
+          <h3>Take part</h3>
+          <p>Share feedback, register for events, and find updates made for campus.</p>
+          <button class="home-step-link" data-page="events">Explore events <span aria-hidden="true">→</span></button>
+        </article>
+      </div>
+    </section>
   </section>
 
   <!-- ================= NOTICES ================= -->
@@ -255,13 +280,13 @@
         </div>
         <div class="field">
           <label for="lfTitle">Item</label>
-          <input id="lfTitle" required placeholder="e.g. Black wallet" />
+          <input id="lfTitle" maxlength="120" required placeholder="e.g. Black wallet" />
         </div>
       </div>
       <div class="grid grid-2">
         <div class="field">
           <label for="lfLocation">Location</label>
-          <input id="lfLocation" required placeholder="e.g. Block B canteen" />
+          <input id="lfLocation" maxlength="160" required placeholder="e.g. Block B canteen" />
         </div>
         <div class="field">
           <label for="lfContact">Contact</label>
@@ -270,7 +295,7 @@
       </div>
       <div class="field">
         <label for="lfDesc">Details</label>
-        <textarea id="lfDesc" rows="3" placeholder="Any extra detail..."></textarea>
+        <textarea id="lfDesc" rows="3" maxlength="2000" placeholder="Any extra detail..."></textarea>
       </div>
       <div class="field">
         <label for="lfPhoto">Item photo (optional)</label>
@@ -304,11 +329,31 @@
 
 </main>
 
+<div id="noticeDetail" class="notice-detail-page hidden" role="dialog" aria-modal="true" aria-labelledby="noticeDetailTitle">
+  <div id="noticeDetailContent"></div>
+</div>
+
 <footer class="site-footer">
   <div class="container">
-    <p><strong>Free Students’ Union</strong></p>
-    <p class="muted small">Student voice, campus updates and support—all in one place.</p>
-    <p class="muted small">Verify your email, then get your student ID approved by an FSU admin to unlock student services.</p>
+    <div class="footer-main">
+      <div class="footer-brand">
+        <a class="footer-wordmark" href="#" data-page="home" aria-label="Free Students' Union home">
+          <span class="footer-brand-mark">F</span>
+          <span><strong>free students</strong><small>UNION</small></span>
+        </a>
+        <p>Student voice, campus updates, and support—in one place.</p>
+      </div>
+      <nav class="footer-links" aria-label="Footer navigation">
+        <div><strong>Explore</strong><button data-page="notices">Notices</button><button data-page="events">Events</button><button data-page="opportunities">Opportunities</button></div>
+        <div><strong>Get involved</strong><button data-page="complaints">Help & private inbox</button><button data-page="lostfound">Lost & Found</button><button data-page="gallery">Campus gallery</button></div>
+        <div><strong>Your account</strong><button data-page="login">Sign in or create account</button><button data-page="team">Meet the team</button></div>
+      </nav>
+    </div>
+    <div class="footer-bottom">
+      <span>© <span id="footerYear"></span> Free Students’ Union</span>
+      <span>Student services require email confirmation and admin approval of your campus ID.</span>
+      <button id="footerTop" class="footer-top" type="button">Back to top ↑</button>
+    </div>
   </div>
 </footer>
 

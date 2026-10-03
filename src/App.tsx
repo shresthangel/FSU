@@ -1,15 +1,25 @@
-import { useEffect, useState, type FormEvent, type MouseEvent } from 'react'
+import { lazy, Suspense, useEffect, useState, type FormEvent, type MouseEvent } from 'react'
+import {
+  createUserWithEmailAndPassword,
+  onAuthStateChanged,
+  reload,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+  type User as FirebaseUser,
+} from 'firebase/auth'
+import { doc, getDoc } from 'firebase/firestore'
 import {
   ArrowDownRight,
   ArrowLeft,
   ArrowRight,
   Bell,
   CalendarDays,
-  CheckCircle,
   ChevronDown,
   CircleHelp,
   Eye,
-  FileText,
   GraduationCap,
   House,
   Image,
@@ -27,12 +37,25 @@ import {
   Sun,
   Trash2,
   Users,
-  UserPlus,
   Vote,
   X,
   type LucideIcon,
 } from 'lucide-react'
+import { auth, db, firebaseConfigured } from './firebase'
+import {
+  createNotice,
+  deleteNotice as deleteNoticeFromFirestore,
+  subscribeToNotices,
+  updateNotice,
+  isNoticeCategory,
+  type Notice,
+  type NoticeCategory,
+  type NoticeInput,
+} from './notices'
+import { subscribeEvents, type EventRecord } from './portal'
 import './App.css'
+
+const PortalPage = lazy(() => import('./PortalPage'))
 
 type NavItem = {
   label: string
@@ -59,7 +82,6 @@ const memberLinks: NavItem[] = [
   { label: 'Profile', path: '/profile', icon: Users },
   { label: 'My Complaints', path: '/my-complaints', icon: MessageSquareWarning },
   { label: 'My Events', path: '/my-events', icon: CalendarDays },
-  { label: 'Join FSU', path: '/join-fsu', icon: UserPlus },
 ]
 
 const adminLinks: NavItem[] = [
@@ -68,25 +90,33 @@ const adminLinks: NavItem[] = [
   { label: 'Complaints', path: '/admin/complaints', icon: MessageSquareWarning },
   { label: 'Events', path: '/admin/events', icon: CalendarDays },
   { label: 'Polls', path: '/admin/polls', icon: Vote },
-  { label: 'Approvals', path: '/admin/approvals', icon: CheckCircle },
+  { label: 'Opportunities', path: '/admin/opportunities', icon: GraduationCap },
+  { label: 'Lost & Found', path: '/admin/lost-found', icon: Search },
   { label: 'Gallery', path: '/admin/gallery', icon: Image },
-  { label: 'Team', path: '/admin/team', icon: Users },
-  { label: 'Decisions', path: '/admin/decisions', icon: FileText },
 ]
 
-type NoticeCategory = 'exam' | 'event' | 'scholarship' | 'general'
+const portalPaths = new Set([
+  '/events',
+  '/polls',
+  '/opportunities',
+  '/lost-found',
+  '/gallery',
+  '/team',
+  '/complaint',
+  '/my-complaints',
+  '/my-events',
+  '/profile',
+  '/track',
+  '/admin',
+  '/admin/events',
+  '/admin/complaints',
+  '/admin/polls',
+  '/admin/opportunities',
+  '/admin/lost-found',
+  '/admin/gallery',
+])
 
-type Notice = {
-  id: string
-  title: string
-  body: string
-  category: NoticeCategory
-  createdAt: string
-}
-
-type NoticeForm = Pick<Notice, 'title' | 'body' | 'category'>
-
-const noticeStorageKey = 'fsu-notices'
+type NoticeForm = NoticeInput
 const noticeCategories: NoticeCategory[] = ['exam', 'event', 'scholarship', 'general']
 const noticeCategoryLabels: Record<NoticeCategory, string> = {
   exam: 'Exam',
@@ -95,92 +125,18 @@ const noticeCategoryLabels: Record<NoticeCategory, string> = {
   general: 'General',
 }
 
-const defaultNotices: Notice[] = [
-  {
-    id: 'welcome-semester',
-    category: 'general',
-    title: 'Your Union, your say: the semester starts here',
-    body: 'Welcome back! Share your ideas and help shape what the Union works on this semester.',
-    createdAt: '2026-10-02T09:00:00.000Z',
-  },
-  {
-    id: 'midterm-hours',
-    category: 'exam',
-    title: 'Study spaces open later during midterms',
-    body: 'The library study spaces will stay open later during the midterm period. Check campus opening notices for daily hours.',
-    createdAt: '2026-09-28T09:00:00.000Z',
-  },
-  {
-    id: 'student-representatives',
-    category: 'scholarship',
-    title: 'Applications are open for student representatives',
-    body: 'Applications are now open for students interested in representing their peers. Contact the Union for application details.',
-    createdAt: '2026-09-24T09:00:00.000Z',
-  },
-]
-
-const isNoticeCategory = (value: unknown): value is NoticeCategory =>
-  typeof value === 'string' && noticeCategories.includes(value as NoticeCategory)
-
-const isNotice = (value: unknown): value is Notice => {
-  if (typeof value !== 'object' || value === null) return false
-  const notice = value as Record<string, unknown>
-  return typeof notice.id === 'string'
-    && typeof notice.title === 'string'
-    && typeof notice.body === 'string'
-    && isNoticeCategory(notice.category)
-    && typeof notice.createdAt === 'string'
-    && !Number.isNaN(Date.parse(notice.createdAt))
-}
-
-const loadNotices = (): { notices: Notice[]; error: string | null } => {
-  try {
-    const storedNotices = window.localStorage.getItem(noticeStorageKey)
-    if (storedNotices === null) return { notices: defaultNotices, error: null }
-    const parsed: unknown = JSON.parse(storedNotices)
-    if (!Array.isArray(parsed) || !parsed.every(isNotice)) {
-      return { notices: defaultNotices, error: 'Saved notices could not be read. The sample notice board is shown instead.' }
-    }
-    return { notices: parsed, error: null }
-  } catch {
-    return { notices: defaultNotices, error: 'Saved notices could not be loaded from this browser.' }
-  }
-}
-
 const formatNoticeDate = (date: string) =>
   new Date(date).toLocaleDateString('en-US', { month: 'short', day: '2-digit', year: 'numeric' }).toUpperCase()
 
 const emptyNoticeForm: NoticeForm = { title: '', body: '', category: 'general' }
-
-const events = [
-  {
-    day: '08',
-    month: 'OCT',
-    title: 'Campus voices town hall',
-    details: 'Bring your questions. Leave with a plan.',
-    time: '5:30 PM · Student Commons',
-    image: 'photo-1523580494863-6f3031224c94',
-    alt: 'Students gathering on a university campus',
-  },
-  {
-    day: '12',
-    month: 'OCT',
-    title: 'Welcome back, everyone',
-    details: 'Good food, new friends, zero awkward icebreakers.',
-    time: '12:00 PM · The Quad',
-    image: 'photo-1511632765486-a01980e01a18',
-    alt: 'Students spending time together outdoors',
-  },
-  {
-    day: '17',
-    month: 'OCT',
-    title: 'Ideas into action workshop',
-    details: 'Make the change you want to see on campus.',
-    time: '3:00 PM · Union Studio',
-    image: 'photo-1523240795612-9a054b0db644',
-    alt: 'Students working together at a table',
-  },
+const homeEventImages = [
+  'photo-1523580494863-6f3031224c94',
+  'photo-1511632765486-a01980e01a18',
+  'photo-1523240795612-9a054b0db644',
 ]
+
+const errorMessage = (error: unknown) =>
+  error instanceof Error ? error.message : 'Something went wrong. Please try again.'
 
 function App() {
   const [currentPath, setCurrentPath] = useState(window.location.pathname)
@@ -188,34 +144,77 @@ function App() {
   const [moreOpen, setMoreOpen] = useState(false)
   const [avatarOpen, setAvatarOpen] = useState(false)
   const [darkMode, setDarkMode] = useState(false)
-  const [user, setUser] = useState<'guest' | 'student' | 'admin'>('guest')
-  const [noticeData, setNoticeData] = useState(loadNotices)
+  const [user, setUser] = useState<FirebaseUser | null>(null)
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [emailVerified, setEmailVerified] = useState(false)
+  const [authLoading, setAuthLoading] = useState(Boolean(auth))
+  const [authPending, setAuthPending] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
+  const [authMessage, setAuthMessage] = useState<string | null>(null)
+  const [noticeData, setNoticeData] = useState<{ notices: Notice[]; error: string | null; loading: boolean }>({
+    notices: [],
+    error: firebaseConfigured ? null : 'Notice board is not configured yet. Add Firebase settings to load shared notices.',
+    loading: firebaseConfigured,
+  })
   const [noticeSearch, setNoticeSearch] = useState('')
   const [noticeCategoryFilter, setNoticeCategoryFilter] = useState<NoticeCategory | 'all'>('all')
   const [noticeForm, setNoticeForm] = useState<NoticeForm>(emptyNoticeForm)
   const [noticeFormError, setNoticeFormError] = useState<string | null>(null)
+  const [noticeSaving, setNoticeSaving] = useState(false)
   const [editingNoticeId, setEditingNoticeId] = useState<string | null>(null)
+  const [homeEvents, setHomeEvents] = useState<EventRecord[]>([])
+  const [homeEventsError, setHomeEventsError] = useState<string | null>(null)
   const notices = noticeData.notices
-
-  const updateNotices = (nextNotices: Notice[]) => {
-    try {
-      window.localStorage.setItem(noticeStorageKey, JSON.stringify(nextNotices))
-      setNoticeData({ notices: nextNotices, error: null })
-    } catch {
-      setNoticeData({ notices: nextNotices, error: 'Notice changes could not be saved in this browser.' })
-    }
-  }
 
   useEffect(() => {
     document.documentElement.dataset.theme = darkMode ? 'dark' : 'light'
   }, [darkMode])
 
   useEffect(() => {
-    const syncNotices = (event: StorageEvent) => {
-      if (event.key === noticeStorageKey || event.key === null) setNoticeData(loadNotices())
+    const firebaseAuth = auth
+    const firestore = db
+    if (!firebaseAuth || !firestore) return
+    let active = true
+    let roleCheck = 0
+    const unsubscribe = onAuthStateChanged(firebaseAuth, async (currentUser) => {
+      const currentCheck = ++roleCheck
+      setUser(currentUser)
+      setEmailVerified(currentUser?.emailVerified ?? false)
+      setIsAdmin(false)
+      setAuthError(null)
+      if (!currentUser || !currentUser.emailVerified) {
+        setAuthLoading(false)
+        return
+      }
+
+      try {
+        const adminDocument = await getDoc(doc(firestore, 'admins', currentUser.uid))
+        if (!active || currentCheck !== roleCheck) return
+        setIsAdmin(adminDocument.exists() && adminDocument.data().role === 'admin')
+      } catch (error) {
+        if (!active || currentCheck !== roleCheck) return
+        setAuthError(`Could not verify administrator access: ${errorMessage(error)}`)
+      } finally {
+        if (active && currentCheck === roleCheck) setAuthLoading(false)
+      }
+    })
+    return () => {
+      active = false
+      unsubscribe()
     }
-    window.addEventListener('storage', syncNotices)
-    return () => window.removeEventListener('storage', syncNotices)
+  }, [])
+
+  useEffect(() => {
+    if (!firebaseConfigured) return
+    return subscribeToNotices(
+      (nextNotices) => setNoticeData({ notices: nextNotices, error: null, loading: false }),
+      (error) => setNoticeData((current) => ({ ...current, error: errorMessage(error), loading: false })),
+    )
+  }, [])
+
+  useEffect(() => {
+    if (!firebaseConfigured) return
+    return subscribeEvents(false, setHomeEvents, (error) => setHomeEventsError(errorMessage(error)))
   }, [])
 
   useEffect(() => {
@@ -238,6 +237,10 @@ function App() {
 
   const navigate = (event: MouseEvent<HTMLAnchorElement>, path: string) => {
     event.preventDefault()
+    navigateTo(path)
+  }
+
+  const navigateTo = (path: string) => {
     window.history.pushState({}, '', path)
     setCurrentPath(path)
     setMenuOpen(false)
@@ -246,27 +249,106 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const logout = () => {
-    setUser('guest')
+  const logout = async () => {
     setAvatarOpen(false)
-    window.history.pushState({}, '', '/')
-    setCurrentPath('/')
+    setAuthError(null)
+    try {
+      if (!auth) throw new Error('Firebase authentication is not configured.')
+      await signOut(auth)
+      window.history.pushState({}, '', '/')
+      setCurrentPath('/')
+    } catch (error) {
+      setAuthError(errorMessage(error))
+    }
   }
 
-  const login = (event: FormEvent<HTMLFormElement>, role: 'student' | 'admin') => {
+  const login = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setUser(role)
-    window.history.pushState({}, '', '/')
-    setCurrentPath('/')
+    setAuthError(null)
+    setAuthMessage(null)
+    setAuthPending(true)
+    const formData = new FormData(event.currentTarget)
+    const email = String(formData.get('email') ?? '').trim()
+    const password = String(formData.get('password') ?? '')
+
+    try {
+      if (!auth) throw new Error('Firebase is not configured. Add the Firebase environment variables and restart the app.')
+      if (currentPath === '/signup') {
+        const credential = await createUserWithEmailAndPassword(auth, email, password)
+        const name = String(formData.get('name') ?? '').trim()
+        if (name) await updateProfile(credential.user, { displayName: name })
+        await sendEmailVerification(credential.user)
+        setAuthMessage('We sent you a verification email. Verify your address to use private support features.')
+        navigateTo('/verify-email')
+      } else {
+        const credential = await signInWithEmailAndPassword(auth, email, password)
+        navigateTo(credential.user.emailVerified ? '/' : '/verify-email')
+      }
+    } catch (error) {
+      setAuthError(errorMessage(error))
+    } finally {
+      setAuthPending(false)
+    }
   }
 
-  const loginAsAdmin = () => {
-    setUser('admin')
-    window.history.pushState({}, '', '/')
-    setCurrentPath('/')
+  const resetPassword = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setAuthError(null)
+    setAuthMessage(null)
+    setAuthPending(true)
+    const email = String(new FormData(event.currentTarget).get('email') ?? '').trim()
+    try {
+      if (!auth) throw new Error('Firebase is not configured. Add the Firebase environment variables and restart the app.')
+      await sendPasswordResetEmail(auth, email)
+      setAuthMessage('If an account exists for that email address, a password reset link has been sent.')
+    } catch (error) {
+      setAuthError(errorMessage(error))
+    } finally {
+      setAuthPending(false)
+    }
   }
 
-  const saveNotice = (event: FormEvent<HTMLFormElement>) => {
+  const resendVerification = async () => {
+    setAuthError(null)
+    setAuthMessage(null)
+    try {
+      if (!auth?.currentUser) throw new Error('Sign in to resend the verification email.')
+      if (auth.currentUser.emailVerified) {
+        setEmailVerified(true)
+        setAuthMessage('Your email is already verified.')
+        return
+      }
+      await sendEmailVerification(auth.currentUser)
+      setAuthMessage('Verification email sent. Check your inbox and spam folder.')
+    } catch (error) {
+      setAuthError(errorMessage(error))
+    }
+  }
+
+  const refreshVerification = async () => {
+    setAuthError(null)
+    setAuthMessage(null)
+    try {
+      if (!auth?.currentUser) throw new Error('Sign in to check your verification status.')
+      await reload(auth.currentUser)
+      const verified = auth.currentUser.emailVerified
+      setEmailVerified(verified)
+      if (!verified) {
+        setAuthMessage('Your email is not verified yet. Open the link in the verification email and check again.')
+        return
+      }
+      if (db) {
+        const adminDocument = await getDoc(doc(db, 'admins', auth.currentUser.uid))
+        setIsAdmin(adminDocument.exists() && adminDocument.data().role === 'admin')
+      }
+      setAuthMessage('Email verified. You can now use private support features.')
+      navigateTo('/')
+    } catch (error) {
+      setAuthError(errorMessage(error))
+    }
+  }
+
+  const saveNotice = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     const title = noticeForm.title.trim()
     const body = noticeForm.body.trim()
@@ -275,16 +357,19 @@ function App() {
       return
     }
 
-    const nextNotices = editingNoticeId
-      ? notices.map((notice) => notice.id === editingNoticeId
-        ? { ...notice, title, body, category: noticeForm.category }
-        : notice)
-      : [{ id: crypto.randomUUID(), title, body, category: noticeForm.category, createdAt: new Date().toISOString() }, ...notices]
-
-    updateNotices(nextNotices)
+    setNoticeSaving(true)
     setNoticeFormError(null)
-    setNoticeForm(emptyNoticeForm)
-    setEditingNoticeId(null)
+    try {
+      const noticeInput = { title, body, category: noticeForm.category }
+      if (editingNoticeId) await updateNotice(editingNoticeId, noticeInput)
+      else await createNotice(noticeInput)
+      setNoticeForm(emptyNoticeForm)
+      setEditingNoticeId(null)
+    } catch (error) {
+      setNoticeFormError(errorMessage(error))
+    } finally {
+      setNoticeSaving(false)
+    }
   }
 
   const startEditingNotice = (notice: Notice) => {
@@ -294,12 +379,16 @@ function App() {
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
-  const deleteNotice = (noticeId: string) => {
-    updateNotices(notices.filter((notice) => notice.id !== noticeId))
-    if (editingNoticeId === noticeId) {
-      setEditingNoticeId(null)
-      setNoticeForm(emptyNoticeForm)
-      setNoticeFormError(null)
+  const deleteNotice = async (noticeId: string) => {
+    try {
+      await deleteNoticeFromFirestore(noticeId)
+      if (editingNoticeId === noticeId) {
+        setEditingNoticeId(null)
+        setNoticeForm(emptyNoticeForm)
+        setNoticeFormError(null)
+      }
+    } catch (error) {
+      setNoticeData((current) => ({ ...current, error: errorMessage(error) }))
     }
   }
 
@@ -333,33 +422,85 @@ function App() {
             <div className="auth-icon"><Users size={22} /></div>
             <span className="eyebrow">GOOD TO HAVE YOU HERE</span>
             <h1>{currentPath === '/signup' ? 'Find your people.' : 'Welcome back.'}</h1>
-            <p>Sign in to follow your complaints, save events, and get more from your Union.</p>
-            <form onSubmit={(event) => login(event, 'student')}>
+            <p>{currentPath === '/signup' ? 'Create a student account to access portal features.' : 'Sign in to access your account and support conversations.'}</p>
+            {!firebaseConfigured && <p className="notice-storage-error" role="alert">Firebase is not configured. Add the Firebase environment variables to enable accounts.</p>}
+            {authError && <p className="notice-storage-error" role="alert">{authError}</p>}
+            {authMessage && <p className="portal-message" role="status">{authMessage}</p>}
+            <form onSubmit={login}>
               {currentPath === '/signup' && <label htmlFor="name">Your name</label>}
-              {currentPath === '/signup' && <input id="name" name="name" placeholder="Alex Student" required />}
+              {currentPath === '/signup' && <input id="name" name="name" autoComplete="name" placeholder="Alex Student" required />}
               <label htmlFor="email">University email</label>
-              <input id="email" name="email" type="email" placeholder="you@university.edu" required />
+              <input id="email" name="email" type="email" autoComplete="email" placeholder="you@university.edu" required />
               <label htmlFor="password">Password</label>
-              <input id="password" name="password" type="password" placeholder="At least 8 characters" required />
-              <button className="button button-primary auth-submit" type="submit">
-                {currentPath === '/signup' ? 'Create account' : 'Sign in'} <ArrowRight size={16} />
+              <input id="password" name="password" type="password" autoComplete={currentPath === '/signup' ? 'new-password' : 'current-password'} minLength={6} placeholder="At least 6 characters" required />
+              <button className="button button-primary auth-submit" type="submit" disabled={authPending || !firebaseConfigured}>
+                {authPending ? 'Please wait…' : currentPath === '/signup' ? 'Create account' : 'Sign in'} {!authPending && <ArrowRight size={16} />}
               </button>
             </form>
-            <button className="demo-link" onClick={loginAsAdmin} type="button">
-              Preview the site as an admin
-            </button>
+            {currentPath === '/login' && <a className="demo-link" href="/reset-password" onClick={(event) => navigate(event, '/reset-password')}>Forgot your password?</a>}
+            <a className="demo-link" href={currentPath === '/signup' ? '/login' : '/signup'} onClick={(event) => navigate(event, currentPath === '/signup' ? '/login' : '/signup')}>
+              {currentPath === '/signup' ? 'Already have an account? Sign in' : 'New here? Create an account'}
+            </a>
           </div>
         </main>
       )
     }
 
-    if (currentPath.startsWith('/admin')) {
-      if (user !== 'admin') {
+    if (currentPath === '/reset-password') {
+      return (
+        <main className="auth-page">
+          <div className="auth-card">
+            <span className="eyebrow">ACCOUNT RECOVERY</span>
+            <h1>Reset password.</h1>
+            <p>Enter your account email and Firebase will send a password reset link.</p>
+            {authError && <p className="notice-storage-error" role="alert">{authError}</p>}
+            {authMessage && <p className="portal-message" role="status">{authMessage}</p>}
+            <form onSubmit={resetPassword}>
+              <label htmlFor="reset-email">University email</label>
+              <input id="reset-email" name="email" type="email" autoComplete="email" required />
+              <button className="button button-primary auth-submit" type="submit" disabled={authPending || !firebaseConfigured}>{authPending ? 'Please wait…' : 'Send reset link'}</button>
+            </form>
+            <a className="demo-link" href="/login" onClick={(event) => navigate(event, '/login')}>Back to sign in</a>
+          </div>
+        </main>
+      )
+    }
+
+    if (currentPath === '/verify-email') {
+      return (
+        <main className="auth-page">
+          <div className="auth-card">
+            <span className="eyebrow">EMAIL VERIFICATION</span>
+            <h1>{emailVerified ? 'Email verified.' : 'Check your inbox.'}</h1>
+            <p>{user?.email ? `Signed in as ${user.email}.` : 'Sign in to your student account to verify your email.'} Private support features require a verified email.</p>
+            {authError && <p className="notice-storage-error" role="alert">{authError}</p>}
+            {authMessage && <p className="portal-message" role="status">{authMessage}</p>}
+            {user && !emailVerified && <div className="portal-actions"><button className="button button-primary" onClick={resendVerification} type="button">Resend verification email</button><button className="button button-outline" onClick={refreshVerification} type="button">I verified my email</button></div>}
+            {emailVerified && <button className="button button-primary" onClick={() => navigateTo('/my-complaints')} type="button">Open support inbox</button>}
+            {!user && <a className="button button-primary" href="/login" onClick={(event) => navigate(event, '/login')}>Sign in</a>}
+          </div>
+        </main>
+      )
+    }
+
+    if (portalPaths.has(currentPath)) {
+      return (
+        <Suspense fallback={<main className="interior-page"><p role="status">Loading portal…</p></main>}>
+          <PortalPage key={currentPath} path={currentPath === '/track' ? '/my-complaints' : currentPath} user={user} isAdmin={isAdmin} emailVerified={emailVerified} authLoading={authLoading} onNavigate={navigateTo} />
+        </Suspense>
+      )
+    }
+
+    if (currentPath === '/admin/notices') {
+      if (authLoading) {
+        return <main className="interior-page notice-access"><span className="eyebrow">FSU ADMINISTRATION</span><h1>Checking access…</h1></main>
+      }
+      if (!user || !emailVerified || !isAdmin) {
         return (
           <main className="interior-page notice-access">
             <span className="eyebrow">FSU ADMINISTRATION</span>
             <h1>Admin access required.</h1>
-            <p>Sign in with an administrator account to manage notices. The public notice board is available to everyone.</p>
+            <p>{authError ?? (user ? 'This account does not have administrator permissions.' : 'Sign in with an administrator account to manage notices. The public notice board is available to everyone.')}</p>
             <a className="button button-primary" href="/login" onClick={(event) => navigate(event, '/login')}>Go to admin sign in <ArrowRight size={16} /></a>
           </main>
         )
@@ -404,7 +545,7 @@ function App() {
                     <textarea id="notice-body" value={noticeForm.body} onChange={(event) => { setNoticeForm({ ...noticeForm, body: event.target.value }); setNoticeFormError(null) }} rows={4} maxLength={1000} required />
                     {noticeFormError && <p className="notice-form-error" role="alert">{noticeFormError}</p>}
                     <div className="notice-form-actions">
-                      <button className="button button-primary" type="submit">{editingNoticeId ? 'Save changes' : 'Publish notice'} <ArrowRight size={15} /></button>
+                      <button className="button button-primary" disabled={noticeSaving} type="submit">{noticeSaving ? 'Saving…' : editingNoticeId ? 'Save changes' : 'Publish notice'} {!noticeSaving && <ArrowRight size={15} />}</button>
                       {editingNoticeId && <button className="button button-outline" onClick={() => { setEditingNoticeId(null); setNoticeForm(emptyNoticeForm); setNoticeFormError(null) }} type="button">Cancel</button>}
                     </div>
                   </form>
@@ -475,7 +616,7 @@ function App() {
             </div>
           </div>
           {noticeData.error && <p className="notice-storage-error" role="alert">{noticeData.error}</p>}
-          {visibleNotices.length ? (
+          {noticeData.loading ? <p className="notice-empty" role="status">Loading notices…</p> : visibleNotices.length ? (
             <div className="notice-board-list">
               {visibleNotices.map((notice, index) => (
                 <article className={`notice-board-card notice-tone-${notice.category}`} key={notice.id}>
@@ -489,7 +630,7 @@ function App() {
                 </article>
               ))}
             </div>
-          ) : <div className="notice-empty notice-board-empty">No notices match your search. Try a different search or category.</div>}
+          ) : <div className="notice-empty notice-board-empty">{noticeData.error ? 'Notices are temporarily unavailable.' : notices.length ? 'No notices match your search. Try a different search or category.' : 'There are no notices yet. Check back soon.'}</div>}
         </main>
       )
     }
@@ -548,6 +689,7 @@ function App() {
             <div><span className="eyebrow"><span className="tiny-spark">✳</span> THE LATEST</span><h2>A few things<br className="mobile-break" /> worth knowing.</h2></div>
             <a className="section-link" href="/notices" onClick={(event) => navigate(event, '/notices')}>All notices <ArrowRight size={16} /></a>
           </div>
+          {noticeData.error && <p className="notice-storage-error" role="alert">{noticeData.error}</p>}
           <div className="notice-grid">
             {latestNotices.map((notice, index) => (
               <a className={`notice-card notice-tone-${notice.category}`} href="/notices" key={notice.id} onClick={(event) => navigate(event, '/notices')}>
@@ -557,6 +699,7 @@ function App() {
               </a>
             ))}
           </div>
+          {!noticeData.loading && latestNotices.length === 0 && <p className="notice-empty">{noticeData.error ? 'The latest notices could not be loaded.' : 'There are no notices yet. Check back soon.'}</p>}
         </section>
 
         <section className="events-section">
@@ -565,16 +708,20 @@ function App() {
             <a className="section-link" href="/events" onClick={(event) => navigate(event, '/events')}>See all events <ArrowRight size={16} /></a>
           </div>
           <div className="event-grid">
-            {events.map((event) => (
-              <a className="event-card" href="/events" key={event.title} onClick={(clickEvent) => navigate(clickEvent, '/events')}>
+            {homeEvents.slice(0, 3).map((event, index) => {
+              const startDate = new Date(event.startAt)
+              return (
+              <a className="event-card" href="/events" key={event.id} onClick={(clickEvent) => navigate(clickEvent, '/events')}>
                 <div className="event-image-wrap">
-                  <img src={`https://images.unsplash.com/${event.image}?auto=format&fit=crop&w=800&q=80`} alt={event.alt} />
-                  <div className="event-date"><strong>{event.day}</strong><span>{event.month}</span></div>
+                  <img src={`https://images.unsplash.com/${homeEventImages[index % homeEventImages.length]}?auto=format&fit=crop&w=800&q=80`} alt={`Students at ${event.title}`} />
+                  <div className="event-date"><strong>{startDate.toLocaleDateString('en-US', { day: '2-digit' })}</strong><span>{startDate.toLocaleDateString('en-US', { month: 'short' }).toUpperCase()}</span></div>
                   <span className="event-arrow"><ArrowUpRightIcon /></span>
                 </div>
-                <div className="event-info"><span className="event-time">{event.time}</span><h3>{event.title}</h3><p>{event.details}</p></div>
+                <div className="event-info"><span className="event-time">{startDate.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })} · {event.location}</span><h3>{event.title}</h3><p>{event.description}</p></div>
               </a>
-            ))}
+              )
+            })}
+            {!homeEvents.length && <p className="portal-empty">{homeEventsError ?? (firebaseConfigured ? 'No upcoming events have been published yet.' : 'Campus events will appear here when Firebase is configured.')}</p>}
           </div>
         </section>
 
@@ -612,19 +759,19 @@ function App() {
         </nav>
         <div className="header-actions">
           <button className="theme-button" aria-label={`Switch to ${darkMode ? 'light' : 'dark'} mode`} onClick={() => setDarkMode(!darkMode)} type="button">{darkMode ? <Sun size={17} /> : <Moon size={17} />}</button>
-          {user === 'guest' ? (
+          {authLoading ? null : user === null ? (
             <>
               <a className="button header-complaint" href="/complaint" onClick={(event) => navigate(event, '/complaint')}><MessageSquareWarning size={15} /> Submit complaint</a>
               <a className="login-link" href="/login" onClick={(event) => navigate(event, '/login')}>Log in</a>
-              <a className="button button-small" href="/signup" onClick={(event) => navigate(event, '/signup')}>Join FSU <ArrowRight size={14} /></a>
+              <a className="button button-small" href="/signup" onClick={(event) => navigate(event, '/signup')}>Create account <ArrowRight size={14} /></a>
             </>
           ) : (
             <div className="dropdown-anchor">
-              <button className="user-avatar" aria-label="Open account menu" aria-expanded={avatarOpen} onClick={() => setAvatarOpen(!avatarOpen)} type="button">{user === 'admin' ? 'A' : 'S'}<ChevronDown size={12} /></button>
+              <button className="user-avatar" aria-label="Open account menu" aria-expanded={avatarOpen} onClick={() => setAvatarOpen(!avatarOpen)} type="button">{user.displayName?.trim().charAt(0).toUpperCase() || user.email?.charAt(0).toUpperCase() || 'S'}<ChevronDown size={12} /></button>
               {avatarOpen && (
                 <div className="dropdown-menu avatar-menu">
-                  {memberLinks.filter((item) => item.path !== '/join-fsu').map((item) => link(item, 'dropdown-link'))}
-                  {user === 'admin' && link({ label: 'Admin Dashboard', path: '/admin', icon: LayoutDashboard }, 'dropdown-link')}
+                  {memberLinks.map((item) => link(item, 'dropdown-link'))}
+                  {isAdmin && link({ label: 'Admin Dashboard', path: '/admin', icon: LayoutDashboard }, 'dropdown-link')}
                   <button className="dropdown-link" onClick={logout} type="button"><LogIn size={17} /><span>Logout</span></button>
                 </div>
               )}
@@ -633,6 +780,10 @@ function App() {
           <button className="mobile-menu-button" onClick={() => setMenuOpen(true)} type="button" aria-label="Open menu"><Menu size={22} /></button>
         </div>
       </header>
+
+      {authError && currentPath !== '/login' && currentPath !== '/signup' && !currentPath.startsWith('/admin') && (
+        <p className="auth-status-error" role="alert">{authError}</p>
+      )}
 
       {renderPage()}
 
@@ -668,7 +819,7 @@ function App() {
           <aside className="mobile-sheet" aria-label="Mobile menu" onClick={(event) => event.stopPropagation()}>
             <div className="sheet-header"><a className="brand" href="/" onClick={(event) => navigate(event, '/')}><span className="brand-mark"><span>F</span><span>S</span><i /></span><span className="brand-name">free students<span>union</span></span></a><button className="sheet-close" onClick={() => setMenuOpen(false)} type="button" aria-label="Close menu"><X size={21} /></button></div>
             <div className="sheet-links">{mainLinks.map((item) => link(item, 'sheet-link'))}<div className="sheet-divider" /><span className="sheet-label">EXPLORE MORE</span>{moreLinks.map((item) => link(item, 'sheet-link'))}<div className="sheet-divider" /><a className="sheet-link" href="/complaint" onClick={(event) => navigate(event, '/complaint')}><MessageSquareWarning size={18} /><span>Submit a complaint</span></a>
-              {user === 'guest' ? <div className="sheet-auth"><a className="button button-primary" href="/login" onClick={(event) => navigate(event, '/login')}>Log in</a><a className="button button-outline" href="/signup" onClick={(event) => navigate(event, '/signup')}>Join FSU</a></div> : <button className="sheet-link" onClick={logout} type="button"><LogIn size={18} /><span>Logout</span></button>}
+              {authLoading ? null : user === null ? <div className="sheet-auth"><a className="button button-primary" href="/login" onClick={(event) => navigate(event, '/login')}>Log in</a><a className="button button-outline" href="/signup" onClick={(event) => navigate(event, '/signup')}>Create account</a></div> : <>{isAdmin && link({ label: 'Admin Dashboard', path: '/admin', icon: LayoutDashboard }, 'sheet-link')}<button className="sheet-link" onClick={logout} type="button"><LogIn size={18} /><span>Logout</span></button></>}
             </div>
           </aside>
         </div>

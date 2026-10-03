@@ -1,0 +1,42 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function validNotice(data) {
+      return data.keys().hasAll(['title', 'body', 'category', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['title', 'body', 'category', 'createdAt', 'updatedAt'])
+        && data.title is string
+        && data.title.size() > 0
+        && data.title.size() <= 120
+        && data.body is string
+        && data.body.size() > 0
+        && data.body.size() <= 1000
+        && data.category in ['exam', 'event', 'scholarship', 'general']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    match /notices/{noticeId} {
+      allow read: if true;
+      allow create: if isAdmin()
+        && validNotice(request.resource.data)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time;
+      allow update: if isAdmin()
+        && validNotice(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time;
+      allow delete: if isAdmin();
+    }
+
+    match /admins/{userId} {
+      allow read: if request.auth != null && request.auth.uid == userId;
+      allow write: if false;
+    }
+  }
+}

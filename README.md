@@ -8,7 +8,7 @@ A one-stop website for the **Free Student Union (FSU)**, built so every student 
 
 ## About the project
 
-The FSU works for students, but right now most of its work happens on paper, in random chat groups, and by word of mouth. Students miss events, complaints get lost, and nobody knows what the union is actually doing.
+The FSU works for students, but right now most of its work happens on paper and social media(Facebook), in random chat groups, and by word of mouth. Students miss events, complaints get lost, and nobody knows what the union is actually doing.
 
 This project is a single website where students and the FSU can meet. It is simple to use, works on a phone, and keeps everything in one place.
 

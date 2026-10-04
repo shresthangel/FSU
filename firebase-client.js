@@ -27,22 +27,34 @@ import {
   where,
 } from 'firebase/firestore';
 
+const env = import.meta.env;
+const storageBucket = env.VITE_FIREBASE_STORAGE_BUCKET
+  ?.trim()
+  .replace(/^gs:\/\//, '')
+  .replace(/\/+$/, '');
+
 const firebaseConfig = {
-   apiKey: "AIzaSyBbiJqy4ACAQV-Cl1dl7r3TJWXrUvDS_9s",
-  authDomain: "fsuwebpage.firebaseapp.com",
-  projectId: "fsuwebpage",
-  appId: "1:8778114756:web:fb4d6f91d4af909df50b91",
-  ...(import.meta.env.VITE_FIREBASE_STORAGE_BUCKET
-    ? { storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET }
-    : {}),
+  apiKey: env.VITE_FIREBASE_API_KEY?.trim() || '',
+  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN?.trim() || '',
+  projectId: env.VITE_FIREBASE_PROJECT_ID?.trim() || '',
+  appId: env.VITE_FIREBASE_APP_ID?.trim() || '',
+  ...(storageBucket ? { storageBucket } : {}),
 };
 
-export const isFirebaseConfigured = Object.values(firebaseConfig).every(Boolean);
+export const isFirebaseConfigured = Boolean(
+  firebaseConfig.apiKey
+  && firebaseConfig.authDomain
+  && firebaseConfig.projectId
+  && firebaseConfig.appId,
+);
 export const firebaseProjectId = firebaseConfig.projectId;
 export const firebaseApp = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
+export const isFirebaseStorageConfigured = Boolean(firebaseApp && storageBucket);
 export const auth = firebaseApp ? getAuth(firebaseApp) : null;
 export const db = firebaseApp ? getFirestore(firebaseApp) : null;
-export const storage = firebaseApp ? getStorage(firebaseApp) : null;
+export const storage = isFirebaseStorageConfigured
+  ? getStorage(firebaseApp, `gs://${storageBucket}`)
+  : null;
 
 export {
   addDoc,

@@ -5,6 +5,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.dirname(fileURLToPath(import.meta.url));
+const fallbackTemplate = `<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>FSU Portal</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>`;
 const app = express();
 const port = Number(process.env.PORT || 5173);
 const production = process.env.NODE_ENV === 'production' || process.argv.includes('--production');
@@ -33,7 +45,10 @@ if (production) {
   app.use(async (request, response, next) => {
     if (request.method !== 'GET') return next();
     try {
-      const template = await readFile(path.join(root, 'index.html'), 'utf8');
+      const template = await readFile(path.join(root, 'index.html'), 'utf8').catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+        return fallbackTemplate;
+      });
       const html = await vite.transformIndexHtml(request.originalUrl, template);
       response.status(200).set({ 'Content-Type': 'text/html' }).end(html);
     } catch (error) {

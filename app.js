@@ -36,6 +36,7 @@ import { deleteObject, getDownloadURL, ref, uploadBytes } from 'firebase/storage
 /* ---------- Constants ---------- */
 const STORE_KEY = 'hack_our_campus_v1';
 const ADMIN_TAB_KEY = 'hoc_admin_tab';
+const ADMIN_NOTIFICATIONS_KEY = 'hoc_admin_notifications';
 const EVENT_FEEDBACK_CHOICES = ['Yes', 'No', 'Maybe'];
 
 /* ---------- Tiny DOM helpers ---------- */
@@ -54,6 +55,13 @@ let supportRequests = [];
 let supportMessages = new Map();
 let supportRequestsLoaded = false;
 let supportRequestsError = '';
+let adminNotificationUnsubscribers = [];
+let adminNotificationUserId = '';
+let adminNotificationUnread = {
+  complaints: false,
+  verifications: false,
+  notices: false,
+};
 let lostFoundUnsubscribe = null;
 let participationUnsubscribers = [];
 let participationSubscriptionKey = '';
@@ -374,6 +382,7 @@ function mergePublicContent(content) {
     gallery: Array.isArray(content.gallery) ? content.gallery : state.gallery,
     team: Array.isArray(content.team) ? content.team : state.team,
   };
+  updateAdminSectionNotifications('notices', state.notices.map(notice => notice.id));
   try {
     localStorage.setItem(STORE_KEY, JSON.stringify(state));
   } catch {
@@ -567,6 +576,7 @@ function navigate(page) {
   if (!PAGES.includes(page)) page = 'home';
   if (!hasCampusAccess() && RESTRICTED_PAGES.has(page)) page = 'login';
   if (page !== 'complaints' && page !== 'admin') stopSupportListeners();
+  if (page !== 'admin') stopAdminNotifications();
   $$('.page').forEach(p => p.classList.remove('active'));
   const target = document.getElementById('page-' + page);
   if (target) target.classList.add('active');
@@ -843,6 +853,7 @@ function initAuth() {
     if (verificationUnsubscribe) verificationUnsubscribe();
     verificationUnsubscribe = null;
     stopSupportListeners();
+    stopAdminNotifications();
     stopParticipationSubscriptions();
     if (!user) {
       currentUser = null;
@@ -926,6 +937,8 @@ function firebaseErrorMessage(error) {
     'auth/network-request-failed': 'Could not reach Firebase. Check your internet connection.',
     'auth/user-not-found': 'No account was found for this email.',
     'permission-denied': 'Firestore denied access. Publish firestore.rules to the Firebase project configured in firebase-client.js.',
+    'storage/bucket-not-found': 'Firebase Storage bucket not found. Create the default bucket in Firebase Console → Storage, set its exact name as VITE_FIREBASE_STORAGE_BUCKET, and rebuild/redeploy the app.',
+    'storage/unauthorized': `Firebase Storage denied this upload. Publish storage.rules to Firebase project ${firebaseProjectId}. Admin uploads require a verified account with admins/{UID}.role set to "admin"; Lost & Found uploads require an approved studentVerifications/{UID} record.`,
   };
   return messages[error?.code] || error?.message || 'Please try again.';
 }
@@ -1037,6 +1050,79 @@ function stopSupportListeners() {
   supportMessages = new Map();
   supportRequestsLoaded = false;
   supportRequestsError = '';
+}
+
+function stopAdminNotifications() {
+  adminNotificationUnsubscribers.forEach(unsubscribe => unsubscribe());
+  adminNotificationUnsubscribers = [];
+  adminNotificationUserId = '';
+  adminNotificationUnread = {
+    complaints: false,
+    verifications: false,
+    notices: false,
+  };
+}
+
+function adminNotificationStorageKey(section) {
+  return `${ADMIN_NOTIFICATIONS_KEY}:${currentUser.uid}:${section}`;
+}
+
+function saveAdminNotificationItems(section, ids) {
+  sessionStorage.setItem(adminNotificationStorageKey(section), JSON.stringify([...ids]));
+}
+
+function updateAdminSectionNotifications(section, ids) {
+  if (!isAdmin() || (section === 'notices' && !portalContentLoaded)) return;
+  const currentIds = new Set(ids);
+  const storageKey = adminNotificationStorageKey(section);
+  let savedIds = sessionStorage.getItem(storageKey);
+
+  if (savedIds === null) {
+    saveAdminNotificationItems(section, currentIds);
+    adminNotificationUnread[section] = false;
+  } else {
+    const seenIds = new Set(JSON.parse(savedIds));
+    const sectionIsOpen = $('#page-admin').classList.contains('active')
+      && sessionStorage.getItem(ADMIN_TAB_KEY) === section;
+    if (sectionIsOpen) {
+      currentIds.forEach(id => seenIds.add(id));
+      saveAdminNotificationItems(section, seenIds);
+    }
+    adminNotificationUnread[section] = !sectionIsOpen
+      && [...currentIds].some(id => !seenIds.has(id));
+  }
+  updateAdminNotificationDots();
+}
+
+function updateAdminNotificationDots() {
+  $$('.admin-tabs button[data-tab]').forEach(button => {
+    const section = button.dataset.tab;
+    const unread = Boolean(adminNotificationUnread[section]);
+    const dot = $('.admin-notification-dot', button);
+    if (dot) dot.classList.toggle('hidden', !unread);
+    button.setAttribute('aria-label', `${tabLabel(section)}${unread ? ', new items' : ''}`);
+  });
+}
+
+function startAdminNotifications() {
+  if (!db || !isAdmin()) return;
+  if (adminNotificationUserId === currentUser.uid) return;
+  stopAdminNotifications();
+  adminNotificationUserId = currentUser.uid;
+  const complaints = onSnapshot(collection(db, 'supportRequests'), snapshot => {
+    updateAdminSectionNotifications('complaints', snapshot.docs.map(item => item.id));
+  }, error => {
+    toast(`New complaints could not be checked: ${firebaseErrorMessage(error)}`, 'error');
+  });
+  const verifications = onSnapshot(query(
+    collection(db, 'studentVerifications'),
+    where('status', '==', 'pending'),
+  ), snapshot => {
+    updateAdminSectionNotifications('verifications', snapshot.docs.map(item => item.id));
+  }, error => {
+    toast(`New student verification requests could not be checked: ${firebaseErrorMessage(error)}`, 'error');
+  });
+  adminNotificationUnsubscribers.push(complaints, verifications);
 }
 
 function watchSupportRequests(adminMode, loadMessages = true) {
@@ -1475,7 +1561,7 @@ function bindAdminGallery() {
           toast(`Failed upload cleanup: ${firebaseErrorMessage(cleanupError)}`, 'error');
         }
       }
-      toast(error instanceof Error ? error.message : 'The image could not be added.', 'error');
+      toast(firebaseErrorMessage(error), 'error');
     } finally {
       submit.disabled = false;
     }
@@ -1553,6 +1639,7 @@ function renderAdmin() {
     return;
   }
   if (!isAdmin()) {
+    stopAdminNotifications();
     area.innerHTML = `
       <div class="card login-card">
         <h2 class="page-title">FSU admin access</h2>
@@ -1567,6 +1654,8 @@ function renderAdmin() {
     return;
   }
 
+  startAdminNotifications();
+  updateAdminSectionNotifications('notices', state.notices.map(notice => notice.id));
   const tabs = ['overview','complaints','verifications','notices','events','lostfound','gallery'];
   const savedTab = sessionStorage.getItem(ADMIN_TAB_KEY);
   const activeTab = tabs.includes(savedTab) ? savedTab : 'overview';
@@ -1581,7 +1670,8 @@ function renderAdmin() {
       ${tabs
         .map(t => `
           <button data-tab="${t}" class="${t === activeTab ? 'active' : ''}">
-            ${tabLabel(t)}
+            <span>${tabLabel(t)}</span>
+            <span class="admin-notification-dot hidden" aria-hidden="true"></span>
           </button>
         `).join('')}
     </div>
@@ -2819,7 +2909,7 @@ async function handleLostFoundSubmit(e) {
         toast(`Item photo cleanup failed: ${firebaseErrorMessage(cleanupError)}`, 'error');
       }
     }
-    toast(error instanceof Error ? error.message : 'The item photo could not be added.', 'error');
+    toast(firebaseErrorMessage(error), 'error');
     return;
   } finally {
     submit.disabled = false;

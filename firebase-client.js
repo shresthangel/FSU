@@ -27,28 +27,33 @@ import {
   where,
 } from 'firebase/firestore';
 
-const env = import.meta.env;
-const storageBucket = env.VITE_FIREBASE_STORAGE_BUCKET
-  ?.trim()
-  .replace(/^gs:\/\//, '')
-  .replace(/\/+$/, '');
-
 const firebaseConfig = {
-  apiKey: env.VITE_FIREBASE_API_KEY?.trim() || '',
-  authDomain: env.VITE_FIREBASE_AUTH_DOMAIN?.trim() || '',
-  projectId: env.VITE_FIREBASE_PROJECT_ID?.trim() || '',
-  appId: env.VITE_FIREBASE_APP_ID?.trim() || '',
-  ...(storageBucket ? { storageBucket } : {}),
+  apiKey: 'AIzaSyBbiJqy4ACAQV-Cl1dl7r3TJWXrUvDS_9s',
+  authDomain: 'fsuwebpage.firebaseapp.com',
+  projectId: 'fsuwebpage',
+  storageBucket: 'fsuwebpage.firebasestorage.app',
+  messagingSenderId: '8778114756',
+  appId: '1:8778114756:web:fb4d6f91d4af909df50b91',
+  measurementId: 'G-RLZLE2VNG2',
 };
 
-export const isFirebaseConfigured = Boolean(
-  firebaseConfig.apiKey
-  && firebaseConfig.authDomain
-  && firebaseConfig.projectId
-  && firebaseConfig.appId,
-);
-export const firebaseProjectId = firebaseConfig.projectId;
+const requiredConfig = {
+  apiKey: firebaseConfig.apiKey.trim(),
+  authDomain: firebaseConfig.authDomain.trim(),
+  projectId: firebaseConfig.projectId.trim(),
+  appId: firebaseConfig.appId.trim(),
+};
+
+export const firebaseConfigurationMissing = Object.entries(requiredConfig)
+  .filter(([, value]) => !value)
+  .map(([key]) => key);
+export const isFirebaseConfigured = firebaseConfigurationMissing.length === 0;
+export const firebaseProjectId = requiredConfig.projectId;
 export const firebaseApp = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
+const storageBucket = (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket)
+  .trim()
+  .replace(/^gs:\/\//, '')
+  .replace(/\/+$/, '');
 export const isFirebaseStorageConfigured = Boolean(firebaseApp && storageBucket);
 export const auth = firebaseApp ? getAuth(firebaseApp) : null;
 export const db = firebaseApp ? getFirestore(firebaseApp) : null;

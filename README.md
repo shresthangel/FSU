@@ -62,6 +62,7 @@ Verified administrators get an **admin dashboard** to publish updates, handle su
 - See all complaints in one list, assign them, change status, and reply
 - Add events, choose whether to collect student feedback, and review responses
 - Add and remove gallery photos
+- Add gallery photos using either a direct public image link or an uploaded file; published gallery links are visible to visitors and signed-in users
 - Moderate lost and found posts
 - Simple numbers on the dashboard: total complaints, solved ones, event sign-ups
 
@@ -100,6 +101,7 @@ If sign-in succeeds but shows a Firestore permissions warning, the student accou
 - Admin access is granted only when a verified account has an `admins/<Firebase Auth UID>` document with `role: "admin"`. Manage that collection only in the Firebase console or trusted server; its rules prevent users from listing or modifying the allowlist.
 - Configure Firebase Authentication's authorized domains for local development and your deployed site.
 - Notices, published events, opportunities, team details, and gallery metadata sync through the admin-managed `portalContent/public` document. Gallery and Lost & Found images are stored in Firebase Storage; Lost & Found posts, event registrations, and event feedback are stored in Firestore. Local storage is only a cache, not the source of truth. Deploy the rules before hosting, and configure Firebase Authentication's authorized domains for the deployed site.
+- To add a linked gallery image, open **Admin → Gallery**, enter a caption, and paste a direct `https://` image URL in **Photo link**. The image host must allow public viewing/hotlinking; a sharing or web-page URL is not necessarily a direct image link. Publishing saves the URL to shared public portal content, so visitors do not need to sign in to view the gallery.
 
 ## Intended production stack
 

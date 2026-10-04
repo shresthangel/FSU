@@ -1476,10 +1476,16 @@ function adminGallery() {
           <input id="agCaption" maxlength="120" required placeholder="Event or photo caption">
         </div>
         <div class="field">
-          <label for="agImage">Image</label>
-          <input id="agImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif" required>
-          <span class="muted small">JPEG, PNG, WebP, or GIF; up to 1.5 MB.</span>
+          <label for="agImageUrl">Photo link</label>
+          <input id="agImageUrl" type="url" inputmode="url" placeholder="https://example.com/photo.jpg" autocomplete="url">
+          <span class="muted small">Use a direct, publicly accessible image link. Some sharing links need to be converted to a direct image URL.</span>
         </div>
+        <p class="muted small">Or choose an image file (JPEG, PNG, WebP, or GIF; up to 1.5 MB).</p>
+        <div class="field">
+          <label for="agImage">Image file</label>
+          <input id="agImage" type="file" accept="image/jpeg,image/png,image/webp,image/gif">
+        </div>
+        <img id="agImagePreview" class="admin-image-preview hidden" alt="Gallery photo preview">
         <button class="btn btn-primary" type="submit">Add to gallery</button>
       </form>
       <div class="card">
@@ -1501,48 +1507,97 @@ function adminGallery() {
 }
 
 function bindAdminGallery() {
-  $('#adminGalleryForm').addEventListener('submit', async event => {
+  const form = $('#adminGalleryForm');
+  const fileInput = $('#agImage');
+  const urlInput = $('#agImageUrl');
+  const preview = $('#agImagePreview');
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files?.length) {
+      urlInput.value = '';
+      preview.src = URL.createObjectURL(fileInput.files[0]);
+      preview.classList.remove('hidden');
+    } else if (!urlInput.value.trim()) {
+      preview.removeAttribute('src');
+      preview.classList.add('hidden');
+    }
+  });
+  urlInput.addEventListener('input', () => {
+    const imageUrl = safeGalleryImageUrl(urlInput.value);
+    if (!imageUrl) {
+      preview.removeAttribute('src');
+      preview.classList.add('hidden');
+      return;
+    }
+    fileInput.value = '';
+    preview.src = imageUrl;
+    preview.classList.remove('hidden');
+  });
+  preview.addEventListener('error', () => {
+    preview.classList.add('hidden');
+  });
+
+  form.addEventListener('submit', async event => {
     event.preventDefault();
     if (!requireAdminAction()) return;
 
     const file = $('#agImage').files?.[0];
-    if (!file) {
-      toast('Choose an image to add to the gallery.', 'error');
+    const enteredUrl = urlInput.value.trim();
+    const imageUrl = safeGalleryImageUrl(enteredUrl);
+    if (!file && !enteredUrl) {
+      toast('Add a photo link or choose an image file.', 'error');
       return;
     }
-    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
+    if (file && enteredUrl) {
+      toast('Choose either a photo link or an image file, not both.', 'error');
+      return;
+    }
+    if (enteredUrl && !imageUrl) {
+      toast('Enter a valid photo link starting with https:// or http://.', 'error');
+      urlInput.focus();
+      return;
+    }
+    if (file && !['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
       toast('Choose a JPEG, PNG, WebP, or GIF image.', 'error');
       return;
     }
-    if (file.size > 1.5 * 1024 * 1024) {
+    if (file && file.size > 1.5 * 1024 * 1024) {
       toast('The image must be 1.5 MB or smaller.', 'error');
       return;
     }
+    if (imageUrl && !await isImageUrlLoadable(imageUrl)) {
+      toast('That photo link could not be loaded. Use a direct, publicly accessible image URL.', 'error');
+      urlInput.focus();
+      return;
+    }
 
-    if (!storage) {
+    if (file && !storage) {
       toast('Firebase Storage is not configured for gallery uploads.', 'error');
       return;
     }
 
     const submit = $('#adminGalleryForm button[type="submit"]');
     const id = uid('g');
-    const extension = {
+    const extension = file ? {
       'image/jpeg': 'jpg',
       'image/png': 'png',
       'image/webp': 'webp',
       'image/gif': 'gif',
-    }[file.type];
-    const storagePath = `gallery/${id}.${extension}`;
+    }[file.type] : '';
+    const storagePath = file ? `gallery/${id}.${extension}` : '';
     submit.disabled = true;
     let contentSaved = false;
     try {
-      await uploadBytes(ref(storage, storagePath), file, { contentType: file.type });
-      const image = await getDownloadURL(ref(storage, storagePath));
+      let image = imageUrl;
+      if (file) {
+        await uploadBytes(ref(storage, storagePath), file, { contentType: file.type });
+        image = await getDownloadURL(ref(storage, storagePath));
+      }
       const item = {
         id,
         caption: $('#agCaption').value.trim(),
         image,
-        storagePath,
+        ...(storagePath ? { storagePath } : {}),
       };
       state.gallery.unshift(item);
       cacheStateLocally();
@@ -1555,10 +1610,12 @@ function bindAdminGallery() {
       if (!contentSaved) {
         state.gallery = state.gallery.filter(item => item.id !== id);
         cacheStateLocally();
-        try {
-          await deleteObject(ref(storage, storagePath));
-        } catch (cleanupError) {
-          toast(`Failed upload cleanup: ${firebaseErrorMessage(cleanupError)}`, 'error');
+        if (storagePath) {
+          try {
+            await deleteObject(ref(storage, storagePath));
+          } catch (cleanupError) {
+            toast(`Failed upload cleanup: ${firebaseErrorMessage(cleanupError)}`, 'error');
+          }
         }
       }
       toast(firebaseErrorMessage(error), 'error');
@@ -1595,6 +1652,20 @@ function bindAdminGallery() {
       renderGallery();
       toast('Gallery photo deleted', 'success');
     });
+  });
+}
+
+function safeGalleryImageUrl(value) {
+  const url = safeExternalUrl(value);
+  return url === '#' ? '' : url;
+}
+
+function isImageUrlLoadable(url) {
+  return new Promise(resolve => {
+    const image = new Image();
+    image.onload = () => resolve(image.naturalWidth > 0);
+    image.onerror = () => resolve(false);
+    image.src = url;
   });
 }
 

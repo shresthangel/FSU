@@ -1671,10 +1671,8 @@ function bindAdminGallery() {
       return;
     }
 
-    if (!storage) {
-      notifyStorageNotConfigured('gallery uploads');
     if (file && !storage) {
-      toast('Firebase Storage is not configured for gallery uploads.', 'error');
+      notifyStorageNotConfigured('gallery uploads');
       return;
     }
 

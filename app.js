@@ -11,6 +11,7 @@ import {
   getDocs,
   getDoc,
   isFirebaseConfigured,
+  isFirebaseStorageConfigured,
   onAuthStateChanged,
   onSnapshot,
   orderBy,
@@ -261,6 +262,34 @@ let portalContentWriteQueue = Promise.resolve();
 let portalContentExists = false;
 let portalContentLoaded = false;
 
+function setPortalSyncStatus(message, status) {
+  const indicator = $('#portalSyncStatus');
+  if (!indicator) return;
+  indicator.textContent = message;
+  indicator.dataset.syncState = status;
+  indicator.closest('.footer-sync')?.setAttribute('data-sync-state', status);
+}
+
+function readyPortalSyncStatus() {
+  setPortalSyncStatus(
+    isFirebaseStorageConfigured
+      ? 'Live updates on'
+      : 'Live updates on · image uploads need setup',
+    isFirebaseStorageConfigured ? 'ready' : 'setup',
+  );
+}
+
+function notifyStorageNotConfigured(target) {
+  toast(
+    `Firebase Storage is not configured for ${target}. Create or enable the Storage bucket for ${firebaseProjectId}, set VITE_FIREBASE_STORAGE_BUCKET to its exact bucket name, then restart or rebuild the app.`,
+    'error',
+  );
+}
+
+function firestorePermissionHelp(resource) {
+  return `Firestore denied ${resource}. Publish the repository's firestore.rules to project ${firebaseProjectId} with: npx firebase-tools deploy --only firestore:rules --project ${firebaseProjectId}. Confirm firebase-client.js uses this same project.`;
+}
+
 function loadState() {
   try {
     const raw = localStorage.getItem(STORE_KEY);
@@ -333,9 +362,11 @@ function publicContentSnapshot() {
 
 function queuePublicContentWrite() {
   if (!db || !isFirebaseConfigured) {
+    setPortalSyncStatus('Firebase is not configured · changes stay on this device', 'error');
     toast('Firebase is not configured; portal content was saved only in this browser.', 'error');
     return;
   }
+  setPortalSyncStatus('Publishing changes to Firebase…', 'pending');
   clearTimeout(portalContentWriteTimer);
   portalContentWriteTimer = setTimeout(() => persistPublicContentNow().catch(() => undefined), 250);
 }
@@ -347,13 +378,16 @@ async function persistPublicContentNow() {
   clearTimeout(portalContentWriteTimer);
   try {
     const content = publicContentSnapshot();
+    setPortalSyncStatus('Publishing changes to Firebase…', 'pending');
     const write = portalContentWriteQueue
       .catch(() => undefined)
       .then(() => setDoc(doc(db, 'portalContent', 'public'), content));
     portalContentWriteQueue = write;
     await write;
     portalContentExists = true;
+    readyPortalSyncStatus();
   } catch (error) {
+    setPortalSyncStatus('Firebase could not save changes', 'error');
     toast(`Cloud content could not be saved: ${firebaseErrorMessage(error)}`, 'error');
     throw error;
   }
@@ -404,16 +438,38 @@ function mergePublicContent(content) {
 }
 
 function startPublicContentSync() {
-  if (!db || !isFirebaseConfigured || portalContentUnsubscribe) return;
+  if (!db || !isFirebaseConfigured) {
+    setPortalSyncStatus('Firebase is not configured · changes stay on this device', 'error');
+    return;
+  }
+  if (portalContentUnsubscribe) return;
+  setPortalSyncStatus('Connecting to Firebase…', 'pending');
   portalContentUnsubscribe = onSnapshot(
     doc(db, 'portalContent', 'public'),
+    { includeMetadataChanges: true },
     snapshot => {
       portalContentLoaded = true;
       portalContentExists = snapshot.exists();
+      if (snapshot.metadata.fromCache) {
+        setPortalSyncStatus(
+          navigator.onLine
+            ? 'Connecting to Firebase… · showing saved content'
+            : 'Offline · showing saved content',
+          'pending',
+        );
+      } else {
+        readyPortalSyncStatus();
+      }
       if (portalContentExists) mergePublicContent(snapshot.data());
-      else if (isAdminUser) queuePublicContentWrite();
+      else if (isAdminUser && !snapshot.metadata.fromCache) queuePublicContentWrite();
     },
     error => {
+      if (error.code === 'permission-denied') {
+        setPortalSyncStatus('Firestore rules need publishing', 'error');
+        toast(firestorePermissionHelp('public portal content'), 'error');
+        return;
+      }
+      setPortalSyncStatus('Firebase sync failed · check connection', 'error');
       toast(`Portal content could not be loaded from Firebase: ${firebaseErrorMessage(error)}`, 'error');
     },
   );
@@ -484,7 +540,12 @@ function startLostFoundSync() {
       renderLostFound();
       if ($('#page-home').classList.contains('active')) renderHome();
     },
-    error => toast(`Lost & Found posts could not be loaded: ${firebaseErrorMessage(error)}`, 'error'),
+    error => toast(
+      error.code === 'permission-denied'
+        ? firestorePermissionHelp('public Lost & Found posts')
+        : `Lost & Found posts could not be loaded: ${firebaseErrorMessage(error)}`,
+      'error',
+    ),
   );
 }
 
@@ -606,7 +667,7 @@ function navigate(page) {
   if (page === 'team')          renderTeam();
   if (page === 'admin')         renderAdmin();
 
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  scrollToTop();
 }
 
 /* ============================================================
@@ -643,6 +704,23 @@ function renderHome() {
     </span>
   </button>
   `).join('') : '<p class="muted small">No notices posted yet.</p>';
+  const featuredEvents = upcomingEvents
+    .slice()
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    .slice(0, 3);
+  $('#homeEvents').innerHTML = featuredEvents.length ? featuredEvents.map(event => `
+    <button class="home-event" type="button" data-page="events">
+      ${event.image
+        ? `<img src="${escapeAttr(event.image)}" alt="" loading="lazy">`
+        : `<span class="home-event-icon" aria-hidden="true">${lineIcon('calendar')}</span>`}
+      <span class="home-event-content">
+        <strong>${escapeHtml(event.title)}</strong>
+        <span>${lineIcon('calendar')} ${fmtDate(event.date)}${event.time ? ` · ${escapeHtml(event.time)}` : ''}</span>
+        <span>${lineIcon('location')} ${escapeHtml(event.location || 'Location to be announced')}</span>
+      </span>
+      ${lineIcon('arrowUpRight', 'home-event-arrow')}
+    </button>
+  `).join('') : '<p class="muted small">No upcoming events right now. Check back for campus activities.</p>';
 }
 
 /* ---------- NOTICES ---------- */
@@ -936,9 +1014,11 @@ function firebaseErrorMessage(error) {
     'auth/too-many-requests': 'Too many attempts. Wait a bit and try again.',
     'auth/network-request-failed': 'Could not reach Firebase. Check your internet connection.',
     'auth/user-not-found': 'No account was found for this email.',
-    'permission-denied': 'Firestore denied access. Publish firestore.rules to the Firebase project configured in firebase-client.js.',
-    'storage/bucket-not-found': 'Firebase Storage bucket not found. Create the default bucket in Firebase Console → Storage, set its exact name as VITE_FIREBASE_STORAGE_BUCKET, and rebuild/redeploy the app.',
-    'storage/unauthorized': `Firebase Storage denied this upload. Publish storage.rules to Firebase project ${firebaseProjectId}. Admin uploads require a verified account with admins/{UID}.role set to "admin"; Lost & Found uploads require an approved studentVerifications/{UID} record.`,
+    'permission-denied': `Firestore denied access. Deploy the latest firestore.rules to project ${firebaseProjectId}. For admin replies, confirm the verified admin account has an admins/<UID> document with role "admin".`,
+    'storage/unauthorized': `Firebase Storage denied the upload. Deploy storage.rules to project ${firebaseProjectId} and verify that your account is a verified admin with an admins/<UID> document whose role is "admin".`,
+    'storage/bucket-not-found': `Firebase Storage could not find the configured bucket. Create or enable the bucket in Firebase Console for ${firebaseProjectId}, then set VITE_FIREBASE_STORAGE_BUCKET to its exact name and rebuild.`,
+    'storage/project-not-found': `Firebase Storage could not find project ${firebaseProjectId}. Check the Firebase project settings and configured bucket.`,
+    'storage/unknown': `Firebase Storage could not complete the request. Confirm the bucket exists, storage.rules is published, and the network can reach Firebase.`,
   };
   return messages[error?.code] || error?.message || 'Please try again.';
 }
@@ -1193,10 +1273,10 @@ function renderSupportInbox(adminMode) {
     target.innerHTML = '<div class="empty">No conversations yet. Send the FSU a message to get started.</div>';
     return;
   }
-  target.innerHTML = supportRequests.map(item => {
+  target.innerHTML = `<div class="support-thread-list${adminMode ? ' support-thread-list-admin' : ''}">${supportRequests.map(item => {
     const messages = supportMessages.get(item.id) || [];
     const conversation = [
-      `<article class="message-bubble message-student"><div class="between"><strong>Student</strong><time>${formatCloudDate(item.createdAt)}</time></div><p>${escapeHtml(item.summary)}</p></article>`,
+      `<article class="message-bubble message-student message-initial"><div class="between"><strong>Original message · Student</strong><time>${formatCloudDate(item.createdAt)}</time></div><p>${escapeHtml(item.summary)}</p></article>`,
       ...messages.map(message => `
         <article class="message-bubble ${message.senderRole === 'admin' ? 'message-admin' : 'message-student'}">
           <div class="between"><strong>${message.senderRole === 'admin' ? 'FSU team' : 'Student'}</strong><time>${formatCloudDate(message.createdAt)}</time></div>
@@ -1205,15 +1285,35 @@ function renderSupportInbox(adminMode) {
       `),
     ].join('');
     return `
-      <article class="support-thread">
+      <article class="support-thread${adminMode ? ' support-thread-admin' : ''}" aria-label="${adminMode ? `Private conversation with student ${escapeAttr(item.studentId || 'unknown')}` : `Private conversation about ${escapeAttr(item.category)}`}">
+        ${adminMode ? `
+          <header class="support-thread-identity">
+            <div class="support-thread-student">
+              <span class="support-thread-kicker">Private student conversation</span>
+              <h4>Student ID <strong>${escapeHtml(item.studentId || 'Not provided')}</strong></h4>
+              <span class="muted small">Account ID: ${escapeHtml(item.userId || 'Unavailable')}</span>
+            </div>
+            <div class="support-thread-meta">
+              <span class="tag">${escapeHtml(item.category)}</span>
+              <span class="badge status-${statusClass(item.status)}">${escapeHtml(item.status)}</span>
+              <time class="muted small">${formatCloudDate(item.createdAt)}</time>
+            </div>
+          </header>
+        ` : `
         <div class="between support-thread-heading">
           <div><span class="tag">${escapeHtml(item.category)}</span>
             <span class="badge status-${statusClass(item.status)}">${escapeHtml(item.status)}</span>
-            ${adminMode ? `<span class="muted small">${escapeHtml(item.studentId)} · ${escapeHtml(item.userId)}</span>` : ''}
           </div>
           <time class="muted small">${formatCloudDate(item.createdAt)}</time>
         </div>
-        ${conversation}
+        `}
+        <section class="support-thread-chat" aria-label="Messages in this conversation">
+          <div class="support-thread-chat-heading">
+            <strong>Conversation</strong>
+            <span>${messages.length + 1} ${messages.length === 0 ? 'message' : 'messages'}</span>
+          </div>
+          <div class="support-thread-messages">${conversation}</div>
+        </section>
         ${adminMode ? `
           <div class="support-admin-tools">
             <label class="small">Status
@@ -1234,7 +1334,7 @@ function renderSupportInbox(adminMode) {
         </form>
       </article>
     `;
-  }).join('');
+  }).join('')}</div>`;
 }
 
 async function handlePrivateMessage(event) {
@@ -1571,6 +1671,8 @@ function bindAdminGallery() {
       return;
     }
 
+    if (!storage) {
+      notifyStorageNotConfigured('gallery uploads');
     if (file && !storage) {
       toast('Firebase Storage is not configured for gallery uploads.', 'error');
       return;
@@ -1920,7 +2022,11 @@ function adminComplaints() {
       <div id="firebaseAdminInbox"><div class="empty">Loading private conversations...</div></div>
     </section>
     ${state.complaints.length ? `
-    <div class="table-wrap">
+    <section class="card legacy-complaint-queue">
+      <p class="eyebrow">FEEDBACK FOLLOW-UP</p>
+      <h3>Earlier complaint submissions</h3>
+      <p class="muted small">These form submissions are separate from the private student conversations above.</p>
+      <div class="table-wrap">
       <table>
         <thead>
           <tr>
@@ -1959,7 +2065,8 @@ function adminComplaints() {
           `).join('')}
         </tbody>
       </table>
-    </div>
+      </div>
+    </section>
     ` : ''}
   `;
 }
@@ -2026,7 +2133,7 @@ function validatePortalImage(file) {
     return false;
   }
   if (!storage) {
-    toast('Firebase Storage is not configured for image uploads.', 'error');
+    notifyStorageNotConfigured('image uploads');
     return false;
   }
   return true;
@@ -2056,6 +2163,24 @@ function bindPortalImagePreview(input, preview) {
       input.value = '';
       return;
     }
+
+    function bindImageRemoval(toggle, input, preview) {
+      if (!toggle) return;
+      const originalImage = preview.getAttribute('src') || '';
+      toggle.addEventListener('change', () => {
+        if (toggle.checked) {
+          input.value = '';
+          preview.classList.add('hidden');
+        } else {
+          preview.src = originalImage;
+          preview.classList.toggle('hidden', !originalImage);
+        }
+      });
+      input.addEventListener('change', () => {
+        if (input.files?.[0]) toggle.checked = false;
+        preview.classList.toggle('hidden', toggle.checked);
+      });
+    }
     const reader = new FileReader();
     reader.addEventListener('load', () => {
       if (typeof reader.result !== 'string') return;
@@ -2067,6 +2192,80 @@ function bindPortalImagePreview(input, preview) {
       input.value = '';
     }, { once: true });
     reader.readAsDataURL(file);
+  });
+}
+
+function validateLostFoundPhoto(file) {
+  if (!file) return true;
+  if (!PORTAL_IMAGE_TYPES[file.type]) {
+    toast('Choose a JPEG, PNG, WebP, or GIF image.', 'error');
+  } else if (file.size > 1024 * 1024) {
+    toast('The item photo must be 1 MB or smaller.', 'error');
+  } else if (!storage) {
+    notifyStorageNotConfigured('Lost & Found photo uploads');
+  } else {
+    return true;
+  }
+  $('#lfPhoto').focus();
+  return false;
+}
+
+function bindLostFoundPhotoPicker() {
+  const input = $('#lfPhoto');
+  const previewWrap = $('#lfPhotoPreviewWrap');
+  const preview = $('#lfPhotoPreview');
+  const removeButton = $('#lfPhotoRemove');
+  let activeReader = null;
+  let previewRequest = 0;
+
+  const clearPreview = () => {
+    previewRequest += 1;
+    activeReader?.abort();
+    activeReader = null;
+    input.value = '';
+    preview.removeAttribute('src');
+    previewWrap.classList.add('hidden');
+  };
+
+  input.addEventListener('change', () => {
+    const file = input.files?.[0];
+    if (!file) {
+      clearPreview();
+      return;
+    }
+    if (!validateLostFoundPhoto(file)) {
+      clearPreview();
+      return;
+    }
+    previewRequest += 1;
+    activeReader?.abort();
+    const reader = new FileReader();
+    activeReader = reader;
+    const requestId = previewRequest;
+    reader.addEventListener('load', () => {
+      if (requestId !== previewRequest) return;
+      activeReader = null;
+      if (typeof reader.result !== 'string') {
+        toast('The selected item photo could not be previewed.', 'error');
+        clearPreview();
+        return;
+      }
+      preview.src = reader.result;
+      previewWrap.classList.remove('hidden');
+    }, { once: true });
+    reader.addEventListener('error', () => {
+      if (requestId !== previewRequest) return;
+      activeReader = null;
+      toast('The selected item photo could not be previewed.', 'error');
+      clearPreview();
+    }, { once: true });
+    reader.readAsDataURL(file);
+  });
+
+  removeButton.addEventListener('click', clearPreview);
+  $('#lostFoundForm').addEventListener('reset', () => {
+    preview.removeAttribute('src');
+    previewWrap.classList.add('hidden');
   });
 }
 
@@ -2203,14 +2402,17 @@ function openNoticeEditor(id) {
         <span class="muted small">JPEG, PNG, WebP, or GIF; up to 5 MB.</span>
         <img id="editNoticeImagePreview" class="admin-image-preview ${notice.image ? '' : 'hidden'}" src="${escapeAttr(notice.image || '')}" alt="Notice image preview">
       </div>
+      ${notice.image ? `<div class="field checkbox"><input id="editNoticeRemoveImage" type="checkbox"><label for="editNoticeRemoveImage">Remove current image</label></div>` : ''}
       <div class="card-actions"><button class="btn btn-primary" type="submit">Save changes</button><button class="btn btn-outline" type="button" data-close-modal>Cancel</button></div>
     </form>
   `);
   bindPortalImagePreview($('#editNoticeImage'), $('#editNoticeImagePreview'));
+  bindImageRemoval($('#editNoticeRemoveImage'), $('#editNoticeImage'), $('#editNoticeImagePreview'));
   $('#editNoticeForm').addEventListener('submit', async e => {
     e.preventDefault();
     if (!requireAdminAction()) return;
     const file = $('#editNoticeImage').files?.[0];
+    const removeImage = Boolean($('#editNoticeRemoveImage')?.checked);
     if (!validatePortalImage(file)) return;
     const submit = e.currentTarget.querySelector('button[type="submit"]');
     const original = { ...notice };
@@ -2225,10 +2427,15 @@ function openNoticeEditor(id) {
       if (uploadedImage) {
         notice.image = uploadedImage.url;
         notice.imagePath = uploadedImage.path;
+      } else if (removeImage) {
+        delete notice.image;
+        delete notice.imagePath;
       }
       cacheStateLocally();
       await persistPublicContentNow();
-      if (uploadedImage && original.imagePath) await removePortalImage(original.imagePath, 'Previous notice image');
+      if ((uploadedImage || removeImage) && original.imagePath) {
+        await removePortalImage(original.imagePath, 'Previous notice image');
+      }
       closeModal();
       renderAdminTab('notices');
       toast('Notice updated', 'success');
@@ -2418,15 +2625,18 @@ function openEventEditor(id) {
         <span class="muted small">JPEG, PNG, WebP, or GIF; up to 5 MB.</span>
         <img id="editEventImagePreview" class="admin-image-preview ${event.image ? '' : 'hidden'}" src="${escapeAttr(event.image || '')}" alt="Event image preview">
       </div>
+      ${event.image ? `<div class="field checkbox"><input id="editEventRemoveImage" type="checkbox"><label for="editEventRemoveImage">Remove current image</label></div>` : ''}
       <div class="field checkbox"><input id="editEventFeedback" type="checkbox" ${event.feedbackPoll?.enabled ? 'checked' : ''}><label for="editEventFeedback">Collect verified campus student feedback for this event</label></div>
       <div class="card-actions"><button class="btn btn-primary" type="submit">Save changes</button><button class="btn btn-outline" type="button" data-close-modal>Cancel</button></div>
     </form>
   `);
   bindPortalImagePreview($('#editEventImage'), $('#editEventImagePreview'));
+  bindImageRemoval($('#editEventRemoveImage'), $('#editEventImage'), $('#editEventImagePreview'));
   $('#editEventForm').addEventListener('submit', async e => {
     e.preventDefault();
     if (!requireAdminAction()) return;
     const file = $('#editEventImage').files?.[0];
+    const removeImage = Boolean($('#editEventRemoveImage')?.checked);
     if (!validatePortalImage(file)) return;
     const submit = e.currentTarget.querySelector('button[type="submit"]');
     const original = { ...event };
@@ -2447,10 +2657,15 @@ function openEventEditor(id) {
       if (uploadedImage) {
         event.image = uploadedImage.url;
         event.imagePath = uploadedImage.path;
+      } else if (removeImage) {
+        delete event.image;
+        delete event.imagePath;
       }
       cacheStateLocally();
       await persistPublicContentNow();
-      if (uploadedImage && original.imagePath) await removePortalImage(original.imagePath, 'Previous event image');
+      if ((uploadedImage || removeImage) && original.imagePath) {
+        await removePortalImage(original.imagePath, 'Previous event image');
+      }
       closeModal();
       renderAdminTab('events');
       toast('Event updated', 'success');
@@ -2923,24 +3138,11 @@ async function handleLostFoundSubmit(e) {
     return;
   }
   const file = $('#lfPhoto').files?.[0];
-  if (file && !['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(file.type)) {
-    toast('Choose a JPEG, PNG, WebP, or GIF image.', 'error');
-    $('#lfPhoto').focus();
-    return;
-  }
-  if (file && file.size > 1024 * 1024) {
-    toast('The item photo must be 1 MB or smaller.', 'error');
-    $('#lfPhoto').focus();
-    return;
-  }
-  if (file && !storage) {
-    toast('Firebase Storage is not configured for item photos.', 'error');
-    $('#lfPhoto').focus();
-    return;
-  }
+  if (!validateLostFoundPhoto(file)) return;
 
   const submit = $('#lostFoundForm button[type="submit"]');
   submit.disabled = true;
+  setPortalSyncStatus('Uploading item to Firebase…', 'pending');
   let uploadedPhotoPath = '';
   try {
     const id = uid('lf');
@@ -2972,6 +3174,7 @@ async function handleLostFoundSubmit(e) {
     });
     state.lostfound = [item, ...state.lostfound.filter(post => post.id !== item.id)];
     cacheStateLocally();
+    readyPortalSyncStatus();
   } catch (error) {
     if (uploadedPhotoPath) {
       try {
@@ -2980,6 +3183,8 @@ async function handleLostFoundSubmit(e) {
         toast(`Item photo cleanup failed: ${firebaseErrorMessage(cleanupError)}`, 'error');
       }
     }
+    setPortalSyncStatus('Item could not be saved to Firebase', 'error');
+    toast(error instanceof Error ? error.message : 'The item photo could not be added.', 'error');
     toast(firebaseErrorMessage(error), 'error');
     return;
   } finally {
@@ -3044,6 +3249,13 @@ function statusClass(status) {
   return 'received';
 }
 
+function scrollToTop() {
+  window.scrollTo({
+    top: 0,
+    behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth',
+  });
+}
+
 /* ============================================================
    INITIALISE
    ============================================================ */
@@ -3056,6 +3268,14 @@ function init() {
   }
   document.body.classList.toggle('theme-dark', storedTheme === 'dark');
   updateThemeToggle();
+  $('#footerYear').textContent = String(new Date().getFullYear());
+  $('#footerTop').addEventListener('click', scrollToTop);
+  window.addEventListener('offline', () => {
+    setPortalSyncStatus('Offline · showing saved content', 'pending');
+  });
+  window.addEventListener('online', () => {
+    setPortalSyncStatus('Reconnecting to Firebase…', 'pending');
+  });
   startPublicContentSync();
   startLostFoundSync();
 
@@ -3201,6 +3421,7 @@ function init() {
   });
 
   /* ---- Lost & found form ---- */
+  bindLostFoundPhotoPicker();
   $('#lostFoundForm').addEventListener('submit', handleLostFoundSubmit);
 
   /* ---- Team contact buttons (delegated) ---- */

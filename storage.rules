@@ -22,14 +22,14 @@ service firebase.storage {
       return request.resource != null
         && request.resource.size > 0
         && request.resource.size <= maxBytes
-        && request.resource.contentType.matches('image/(jpeg|png|webp|gif)');
+        && request.resource.contentType.matches('^image/(jpeg|png|webp|gif)$');
     }
 
     match /gallery/{fileName} {
       allow read: if true;
       allow create, update: if isAdmin()
         && fileName.matches('^[A-Za-z0-9_-]{1,128}\\.(jpg|jpeg|png|webp|gif)$')
-        && validImageUpload(10485760);
+        && validImageUpload(1572864);
       allow delete: if isAdmin();
     }
 
@@ -53,7 +53,7 @@ service firebase.storage {
         && request.auth.uid == ownerUid
         && postId.matches('^[A-Za-z0-9_-]{1,128}$')
         && fileName.matches('^photo\\.(jpg|jpeg|png|webp|gif)$')
-        && validImageUpload(5242880);
+        && validImageUpload(1048576);
       allow delete: if (verifiedStudent() && request.auth.uid == ownerUid) || isAdmin();
     }
   }

@@ -96,13 +96,20 @@
         <div class="between"><div><p class="eyebrow">FRESH OFF THE BOARD</p><h3>Latest notices</h3></div><button class="text-link" data-page="notices">All notices <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>
         <div id="homeNotices"></div>
       </section>
-      <section class="home-cta">
+      <section class="card home-upcoming">
+        <div class="between"><div><p class="eyebrow">COMING UP ON CAMPUS</p><h3>Upcoming events</h3></div><button class="text-link" data-page="events">All events <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button></div>
+        <div id="homeEvents"></div>
+      </section>
+    </div>
+
+    <section class="home-cta">
+      <div>
         <p class="eyebrow">NEED ASSISTANCE?</p>
         <h2>Get in touch with the FSU.</h2>
         <p>Send a private message to the union and follow replies in your inbox.</p>
-        <button class="btn btn-primary" data-page="complaints">Open student support <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
-      </section>
-    </div>
+      </div>
+      <button class="btn btn-primary" data-page="complaints">Open student support <svg class="line-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </section>
 
     <section class="home-membership">
       <div class="home-membership-heading">
@@ -301,6 +308,10 @@
         <label for="lfPhoto">Item photo (optional)</label>
         <input id="lfPhoto" type="file" accept="image/jpeg,image/png,image/webp,image/gif" />
         <span class="muted small">JPEG, PNG, WebP, or GIF; up to 1 MB.</span>
+        <div id="lfPhotoPreviewWrap" class="lost-found-photo-preview hidden">
+          <img id="lfPhotoPreview" alt="Preview of the selected lost or found item photo" />
+          <button id="lfPhotoRemove" class="btn btn-outline btn-sm" type="button">Remove photo</button>
+        </div>
       </div>
       <button class="btn btn-primary" type="submit">Post</button>
     </form>
@@ -338,7 +349,7 @@
     <div class="footer-main">
       <div class="footer-brand">
         <a class="footer-wordmark" href="#" data-page="home" aria-label="Free Students' Union home">
-          <span class="footer-brand-mark">F</span>
+          <img class="footer-brand-mark" src="/assets/fsu-logo.png" alt="" aria-hidden="true">
           <span><strong>free students</strong><small>UNION</small></span>
         </a>
         <p>Student voice, campus updates, and support—in one place.</p>
@@ -351,8 +362,12 @@
     </div>
     <div class="footer-bottom">
       <span>© <span id="footerYear"></span> Free Students’ Union</span>
-      <span>Student services require email confirmation and admin approval of your campus ID.</span>
-      <button id="footerTop" class="footer-top" type="button">Back to top ↑</button>
+      <span class="footer-service-note">Student services require email confirmation and admin approval of your campus ID.</span>
+      <span class="footer-sync" aria-label="Portal content synchronization">
+        <span class="footer-sync-dot" aria-hidden="true"></span>
+        <span id="portalSyncStatus" role="status" aria-live="polite">Connecting to Firebase…</span>
+      </span>
+      <button id="footerTop" class="footer-top" type="button">Back to top <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5m-7 7 7-7 7 7"/></svg></button>
     </div>
   </div>
 </footer>

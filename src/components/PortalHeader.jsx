@@ -44,7 +44,7 @@ export default function PortalHeader() {
     <header className="site-header">
       <div className="container header-inner">
         <a href="#" className="brand" data-page="home" aria-label="Free Students Union home">
-          <span className="brand-mark" aria-hidden="true">F</span>
+          <img className="brand-mark" src="/assets/fsu-logo.png" alt="" aria-hidden="true" />
           <span className="brand-lockup"><strong>free students</strong><span>UNION</span></span>
         </a>
         <Button id="navToggle" className="nav-toggle" variant="outline" size="icon" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mainNav" type="button">

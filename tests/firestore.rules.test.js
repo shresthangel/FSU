@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { after, before, beforeEach, test } from 'node:test';
 import {
@@ -99,7 +100,7 @@ test('verified admins can list support requests while students cannot', async ()
   await assertFails(getDocs(collection(studentDb, 'supportRequests')));
 });
 
-test('student messages and admin replies are readable only within the owned thread', async () => {
+test('verified admins can reply without student approval, while students can reply only in their own thread', async () => {
   await testEnvironment.withSecurityRulesDisabled(async context => {
     await setDoc(doc(context.firestore(), 'supportRequests', requestId), supportRequest());
   });
@@ -121,6 +122,7 @@ test('student messages and admin replies are readable only within the owned thre
   const messages = db => collection(db, 'supportRequests', requestId, 'messages');
 
   await assertSucceeds(addDoc(messages(studentDb), studentMessage));
+  // The admin deliberately has no studentVerifications document.
   await assertSucceeds(addDoc(messages(adminDb), adminReply));
   await assertSucceeds(getDocs(messages(studentDb)));
   await assertFails(getDocs(messages(otherStudentDb)));
@@ -250,10 +252,17 @@ test('public portal content is readable by visitors and writable only by admins'
   const studentDb = testEnvironment.authenticatedContext(studentUid, accountIdentity(studentUid)).firestore();
   const adminDb = testEnvironment.authenticatedContext(adminUid, accountIdentity(adminUid)).firestore();
   const contentPath = db => doc(db, 'portalContent', 'public');
+  const imageUrl = 'https://firebasestorage.googleapis.com/v0/b/example/o/notices%2Fnotice-one%2Fimage-cover.jpg?alt=media&token=test';
 
   await assertSucceeds(getDoc(contentPath(publicDb)));
   await assertFails(setDoc(contentPath(studentDb), { notices: [] }));
-  await assertSucceeds(setDoc(contentPath(adminDb), { notices: [] }));
+  await assertSucceeds(setDoc(contentPath(adminDb), {
+    notices: [{ id: 'notice-one', title: 'Campus update', image: imageUrl }],
+    events: [{ id: 'event-one', title: 'Campus event', image: imageUrl }],
+  }));
+  const publishedContent = await getDoc(contentPath(publicDb));
+  assert.equal(publishedContent.data().notices[0].image, imageUrl);
+  assert.equal(publishedContent.data().events[0].image, imageUrl);
 });
 
 test('event registration and feedback are private to the student and administrators', async () => {

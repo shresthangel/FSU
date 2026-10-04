@@ -27,21 +27,19 @@ import {
   where,
 } from 'firebase/firestore';
 
+const storageBucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET
+  ?.trim()
+  .replace(/^gs:\/\//, '')
+  .replace(/\/+$/, '');
+
 const firebaseConfig = {
   apiKey: 'AIzaSyBbiJqy4ACAQV-Cl1dl7r3TJWXrUvDS_9s',
-  authDomain: 'fsuwebpage.firebaseapp.com',
-  projectId: 'fsuwebpage',
-  storageBucket: 'fsuwebpage.firebasestorage.app',
-  messagingSenderId: '8778114756',
-  appId: '1:8778114756:web:fb4d6f91d4af909df50b91',
-  measurementId: 'G-RLZLE2VNG2',
-};
-
-const requiredConfig = {
-  apiKey: firebaseConfig.apiKey.trim(),
-  authDomain: firebaseConfig.authDomain.trim(),
-  projectId: firebaseConfig.projectId.trim(),
-  appId: firebaseConfig.appId.trim(),
+  authDomain: "fsuwebpage.firebaseapp.com",
+  projectId: "fsuwebpage",
+  appId: "1:8778114756:web:fb4d6f91d4af909df50b91",
+  ...(storageBucket
+    ? { storageBucket }
+    : {}),
 };
 
 export const firebaseConfigurationMissing = Object.entries(requiredConfig)
@@ -50,10 +48,6 @@ export const firebaseConfigurationMissing = Object.entries(requiredConfig)
 export const isFirebaseConfigured = firebaseConfigurationMissing.length === 0;
 export const firebaseProjectId = requiredConfig.projectId;
 export const firebaseApp = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
-const storageBucket = (import.meta.env.VITE_FIREBASE_STORAGE_BUCKET || firebaseConfig.storageBucket)
-  .trim()
-  .replace(/^gs:\/\//, '')
-  .replace(/\/+$/, '');
 export const isFirebaseStorageConfigured = Boolean(firebaseApp && storageBucket);
 export const auth = firebaseApp ? getAuth(firebaseApp) : null;
 export const db = firebaseApp ? getFirestore(firebaseApp) : null;

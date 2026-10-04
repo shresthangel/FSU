@@ -203,8 +203,7 @@ service cloud.firestore {
         }
 
         allow get, list: if canReadThread();
-        allow create: if verifiedStudent()
-          && canReadThread()
+        allow create: if canReadThread()
           && request.resource.data.keys().hasOnly(['senderId', 'senderRole', 'body', 'createdAt'])
           && request.resource.data.senderId == request.auth.uid
           && request.resource.data.senderRole == (isAdmin() ? 'admin' : 'student')

@@ -32,11 +32,15 @@ const storageBucket = import.meta.env.VITE_FIREBASE_STORAGE_BUCKET
   .replace(/^gs:\/\//, '')
   .replace(/\/+$/, '');
 
-const firebaseConfig = {
+const requiredConfig = {
   apiKey: 'AIzaSyBbiJqy4ACAQV-Cl1dl7r3TJWXrUvDS_9s',
   authDomain: "fsuwebpage.firebaseapp.com",
   projectId: "fsuwebpage",
   appId: "1:8778114756:web:fb4d6f91d4af909df50b91",
+};
+
+const firebaseConfig = {
+  ...requiredConfig,
   ...(storageBucket
     ? { storageBucket }
     : {}),
